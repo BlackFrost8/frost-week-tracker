@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Day } from '../types';
 import { completedCount, completionPct, shortDayDate, totalCount } from '../lib/week';
 import { ProgressRing } from './ProgressRing';
@@ -10,7 +11,7 @@ type Props = {
   onToggle: (taskId: string) => void;
   onLabelChange: (taskId: string, label: string) => void;
   onDelete: (taskId: string) => void;
-  onAdd: () => void;
+  onAdd: () => string;
 };
 
 /**
@@ -30,6 +31,7 @@ export function DayRow({
   const pct = completionPct(day);
   const done = completedCount(day);
   const total = totalCount(day);
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   return (
     <div className="frost-divider">
@@ -75,21 +77,25 @@ export function DayRow({
       </button>
 
       {expanded && (
-        <div className="frost-rise pb-4 pl-10">
+        <div className="frost-rise max-w-[54ch] pb-4 pl-10">
           {day.tasks.map((task) => (
             <TaskRow
               key={task.id}
               task={task}
               dense
+              autoFocus={task.id === focusId}
               onToggle={() => onToggle(task.id)}
               onLabelChange={(label) => onLabelChange(task.id, label)}
               onDelete={() => onDelete(task.id)}
             />
           ))}
+          {day.tasks.length === 0 && (
+            <p className="py-1 text-sm text-frost-text-faint">nothing planned yet</p>
+          )}
           <button
             type="button"
-            onClick={onAdd}
-            className="mt-1.5 flex items-center gap-3 py-1 text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-text-dim"
+            onClick={() => setFocusId(onAdd())}
+            className="mt-1.5 flex items-center gap-3 py-1 text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
           >
             <span className="grid h-4 w-4 place-items-center font-mono">+</span>
             add task

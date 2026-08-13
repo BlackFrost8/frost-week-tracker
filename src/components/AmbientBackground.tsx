@@ -1,6 +1,22 @@
 import { useMemo } from 'react';
 
-const MOTE_COUNT = 30;
+/**
+ * 30 was too few to register, but count alone was never the problem — the old
+ * field was uniformly 1-2px dots of a 2.7:1 colour at 0.18-0.58 alpha, which is
+ * below the perceptual floor however many you draw. 80 at a raised opacity
+ * floor, with one in five allowed to be genuinely visible, is what makes it
+ * read as depth.
+ *
+ * 80 is a deliberate ceiling, not an arbitrary number: these are absolutely
+ * positioned spans animating only transform and opacity, so each is its own
+ * compositor layer and costs nothing on the CPU. 80 layers is comfortable on a
+ * decade-old integrated GPU. Past ~250 a canvas rewrite would start to pay for
+ * itself, and the field would read as a starfield rather than as dust.
+ */
+const MOTE_COUNT = 80;
+
+/** One in five. Enough to catch the eye, few enough to still be atmosphere. */
+const BRIGHT_EVERY = 5;
 
 /**
  * The fixed atmosphere layer (§2.5): true black, one off-centre cyan wash, and
@@ -14,18 +30,22 @@ export function AmbientBackground() {
   const motes = useMemo(
     () =>
       Array.from({ length: MOTE_COUNT }, (_, i) => {
-        const size = Math.random() < 0.75 ? 1 : 2;
+        const bright = i % BRIGHT_EVERY === 0;
         return {
           key: i,
-          size,
+          bright,
+          size: bright ? 2 : Math.random() < 0.75 ? 1 : 2,
           left: Math.random() * 100,
           top: Math.random() * 100,
           // Small, mostly-upward drift so it reads as settling dust, not snow.
+          // Speed is deliberately NOT the lever here — a faster mote reads as
+          // weather. More of them, each still slow, means more of the field is
+          // in the visible part of its cycle at any moment.
           dx: `${(Math.random() - 0.5) * 120}px`,
           dy: `${-40 - Math.random() * 140}px`,
           duration: 15 + Math.random() * 25,
           delay: -Math.random() * 30,
-          opacity: 0.18 + Math.random() * 0.4,
+          opacity: bright ? 0.55 + Math.random() * 0.35 : 0.14 + Math.random() * 0.22,
         };
       }),
     [],
@@ -37,7 +57,7 @@ export function AmbientBackground() {
       {motes.map((m) => (
         <span
           key={m.key}
-          className="frost-mote"
+          className={m.bright ? 'frost-mote frost-mote--bright' : 'frost-mote'}
           style={
             {
               width: m.size,

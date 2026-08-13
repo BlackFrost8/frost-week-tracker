@@ -181,9 +181,13 @@ export function useWeek(store: WeekStore, ready: boolean) {
     [mapDay],
   );
 
+  /** Returns the new row's id so the caller can focus it immediately. */
   const addTask = useCallback(
-    (dayId: DayId, label = '') =>
-      mapDay(dayId, (tasks) => [...tasks, { id: uid(), label, done: false }]),
+    (dayId: DayId, label = '') => {
+      const id = uid();
+      mapDay(dayId, (tasks) => [...tasks, { id, label, done: false }]);
+      return id;
+    },
     [mapDay],
   );
 

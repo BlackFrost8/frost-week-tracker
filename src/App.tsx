@@ -13,7 +13,7 @@ import { DayRow } from './components/DayRow';
 import { AccountDialog } from './components/AccountDialog';
 
 export default function App() {
-  const { mode, email } = useAuth();
+  const { mode, profile } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
   const [migrationNote, setMigrationNote] = useState<string | null>(null);
 
@@ -103,58 +103,64 @@ export default function App() {
           knownWeeks={knownWeeks}
           onGoToWeek={goToWeek}
           sync={sync}
-          email={email}
-          onSignOut={handleSignOut}
+          profile={profile}
           onOpenAccount={() => setAccountOpen(true)}
         />
 
         {(error || migrationNote) && (
           <p
             className="font-mono text-sm"
-            style={{ color: error ? '#c96b7a' : 'var(--color-frost-cyan-300)' }}
+            style={{
+              color: error ? 'var(--color-frost-alert)' : 'var(--color-frost-cyan-200)',
+            }}
             role={error ? 'alert' : 'status'}
           >
             {error ?? migrationNote}
           </p>
         )}
 
-        <ControlPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
+        {/* On a phone this sat above the fold as ~340px of empty underlined
+            fields, pushing the hero ring off-screen — the first thing you saw
+            on opening the app was chrome. It keeps its desktop position. */}
+        <div className="order-last lg:order-none">
+          <ControlPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
+        </div>
 
-        <main className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-16">
-          <div className="lg:col-start-2 lg:row-start-1">
+        {/* The hero owns the right rail and stays put; everything you actually
+            edit lives in one column on the left. The old version gave TodayCard
+            a row-span it never filled, leaving a tall dead zone bottom-left. */}
+        <main className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-16">
+          <div className="lg:sticky lg:top-10 lg:col-start-2 lg:row-start-1">
             <HeroPanel week={week} />
           </div>
 
-          {todayDay && (
-            <div className="lg:col-start-1 lg:row-start-1 lg:row-span-2">
-              <TodayCard day={todayDay} {...handlers(todayDay.id)} />
-            </div>
-          )}
+          <div className="flex flex-col gap-10 lg:col-start-1 lg:row-start-1">
+            {todayDay && <TodayCard day={todayDay} {...handlers(todayDay.id)} />}
 
-          <div
-            className={
-              todayDay
-                ? 'lg:col-start-2 lg:row-start-2'
-                : 'lg:col-start-1 lg:row-start-1 lg:row-span-2'
-            }
-          >
-            {todayDay && (
-              <p className="mb-1 text-xs text-frost-text-faint">the rest of the week</p>
-            )}
-            {restOfWeek.map((day) => (
-              <DayRow
-                key={day.id}
-                day={day}
-                expanded={expanded === day.id}
-                onExpand={() => setExpanded((cur) => (cur === day.id ? null : day.id))}
-                {...handlers(day.id)}
-              />
-            ))}
+            <div>
+              {todayDay && (
+                <p className="mb-1 text-xs text-frost-text-faint">the rest of the week</p>
+              )}
+              {restOfWeek.map((day) => (
+                <DayRow
+                  key={day.id}
+                  day={day}
+                  expanded={expanded === day.id}
+                  onExpand={() => setExpanded((cur) => (cur === day.id ? null : day.id))}
+                  {...handlers(day.id)}
+                />
+              ))}
+            </div>
           </div>
         </main>
       </div>
 
-      <AccountDialog open={accountOpen} onClose={() => setAccountOpen(false)} email={email} />
+      <AccountDialog
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        profile={profile}
+        onSignOut={handleSignOut}
+      />
     </>
   );
 }

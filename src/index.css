@@ -1,23 +1,41 @@
 @import 'tailwindcss';
 
-/* ── Tokens (overhaul §2.2) ──────────────────────────────────────────────────
-   Cyan at full brightness is a scarce resource. cyan-100/300 belong to the hero
-   ring and nothing else; today's card gets cyan-700; everything else is tonal. */
+/* ── Tokens (overhaul §2.2, revised) ─────────────────────────────────────────
+   The original rule budgeted "cyan at full brightness" as one resource. That
+   conflated two unrelated things and is why the screen read as dry:
+
+     GLOW  — blurred light. This is the AI-slop tell (a box-shadow utility
+             applied globally), and it stays budgeted BY COUNT: max two
+             elements, ever. Unchanged from the overhaul.
+     CHROMA— flat, unblurred, saturated fill. This is poster/Swiss-print
+             vocabulary, not slop, and no amount of it reads as generated.
+             Budgeted BY AREA instead: cyan at C*ab >= 40 should cover roughly
+             1.5–3.5% of the viewport. It previously covered 0.00%.
+
+   So the ramp below climbs in chroma, not just in lightness. The old top of
+   the ramp (#b8fdff) was the LEAST colourful cyan in the set — C*21 at L*97,
+   i.e. white. The spotlight was being spent on a colour that isn't one. */
 @theme {
   --color-frost-black: #000000;
   --color-frost-void: #050708;
   --color-frost-surface: #0a0d10;
   --color-frost-surface-2: #10141a;
 
-  --color-frost-cyan-100: #b8fdff;
-  --color-frost-cyan-300: #4dd9e8;
-  --color-frost-cyan-500: #14b8c9;
-  --color-frost-cyan-700: #0a5a66;
-  --color-frost-cyan-900: #041c20;
+  --color-frost-cyan-050: #d6feff; /* text ON cyan fills, nothing else */
+  --color-frost-cyan-100: #00ffff; /* C*50 — hero arc terminal stop + save flash */
+  --color-frost-cyan-200: #00efff; /* C*49 — THE working accent: flat fills only */
+  --color-frost-cyan-300: #00c9dd; /* interactive / hover / active */
+  --color-frost-cyan-500: #0b93a6; /* structural accent */
+  --color-frost-cyan-700: #0a5a66; /* dim — DECORATION ONLY, never text (2.7:1) */
+  --color-frost-cyan-900: #002d33; /* ring tracks, wash stops */
+  --color-frost-cyan-950: #000808; /* the one lifted surface */
 
-  --color-frost-text: #e6f2f2;
-  --color-frost-text-dim: #5c7377;
-  --color-frost-text-faint: #2c3a3c;
+  /* Tertiary text was #2c3a3c — 1.78:1 on black, i.e. invisible, on ~40 nodes.
+     Both tiers are now teal-hued, so even quiet type carries the accent. */
+  --color-frost-text: #e6f2f2; /* 18.3:1 */
+  --color-frost-text-dim: #7d9599; /* was 4.17:1 → 6.75:1 */
+  --color-frost-text-faint: #4e666a; /* was 1.78:1 → 3.48:1 */
+  --color-frost-alert: #ff5d73;
 
   /* A real scale (§2.3) — replaces the old 9/10/11/12/13/14px mush. */
   --text-xs: 12px;
@@ -51,13 +69,13 @@ body {
 }
 
 ::selection {
-  background: rgba(77, 217, 232, 0.25);
-  color: var(--color-frost-cyan-100);
+  background: rgba(0, 239, 255, 0.28);
+  color: var(--color-frost-cyan-050);
 }
 
 /* Focus states must survive the visual pass (§3.7). */
 :focus-visible {
-  outline: 1px solid var(--color-frost-cyan-300);
+  outline: 2px solid var(--color-frost-cyan-200);
   outline-offset: 3px;
   border-radius: 2px;
 }
@@ -81,6 +99,11 @@ body {
 /* ── Ambient layer (§2.5) ────────────────────────────────────────────────────
    Atmosphere, not decoration. If you notice it as an effect, it's overdone. */
 
+/* The old wash was 5.5% of #14b8c9, which composites over black to rgb(1,10,11)
+   — darker than the palette's own "lifted black". 470,000px² of nothing. Area
+   times subtlety beats point times brightness on a black canvas, so the alpha
+   goes up and the colour moves to the new accent. The third stop is real corner
+   darkening: without something darker around it, a wash can't read as *light*. */
 .frost-vignette {
   position: fixed;
   inset: 0;
@@ -88,8 +111,9 @@ body {
   pointer-events: none;
   /* Deliberately off-centre — dead-centre reads as template-generated. */
   background:
-    radial-gradient(720px 520px at 62% 18%, rgba(20, 184, 201, 0.055), transparent 70%),
-    radial-gradient(560px 420px at 18% 78%, rgba(10, 90, 102, 0.035), transparent 72%);
+    radial-gradient(900px 620px at 64% 10%, rgba(0, 239, 255, 0.14), transparent 68%),
+    radial-gradient(620px 460px at 14% 82%, rgba(0, 201, 221, 0.07), transparent 72%),
+    radial-gradient(1200px 900px at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
 }
 
 .frost-mote {
@@ -101,6 +125,16 @@ body {
   animation-name: frost-drift;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+}
+
+/* A minority tier that is actually visible. The field was previously uniform:
+   30 dots of a 2.7:1 colour at 1–2px, which is below the perceptual floor no
+   matter how many you add. Varying the tier is what makes it read as depth
+   rather than as noise. Excluded from the glow count by the same rule that
+   already excludes .frost-mote — these are atmosphere, not UI. */
+.frost-mote--bright {
+  background: var(--color-frost-cyan-200);
+  box-shadow: 0 0 6px 1px rgba(0, 239, 255, 0.55);
 }
 
 @keyframes frost-drift {
@@ -127,12 +161,12 @@ body {
 @keyframes frost-hero-breathe {
   0%,
   100% {
-    filter: drop-shadow(0 0 6px rgba(77, 217, 232, 0.45))
-      drop-shadow(0 0 20px rgba(20, 184, 201, 0.2));
+    filter: drop-shadow(0 0 7px rgba(0, 239, 255, 0.4))
+      drop-shadow(0 0 22px rgba(0, 201, 221, 0.2));
   }
   50% {
-    filter: drop-shadow(0 0 12px rgba(184, 253, 255, 0.7))
-      drop-shadow(0 0 34px rgba(77, 217, 232, 0.32));
+    filter: drop-shadow(0 0 14px rgba(0, 255, 255, 0.62))
+      drop-shadow(0 0 38px rgba(0, 239, 255, 0.3));
   }
 }
 .frost-hero-glow {
@@ -144,33 +178,53 @@ body {
 @keyframes frost-hero-text {
   0%,
   100% {
-    text-shadow: 0 0 18px rgba(77, 217, 232, 0.28);
+    text-shadow: 0 0 18px rgba(0, 239, 255, 0.3);
   }
   50% {
-    text-shadow: 0 0 26px rgba(184, 253, 255, 0.5);
+    text-shadow: 0 0 28px rgba(0, 255, 255, 0.48);
   }
 }
 .frost-hero-text {
   animation: frost-hero-text 3s ease-in-out infinite;
 }
 
+/* The core verb of the app is checking off a task, and until now it produced
+   less feedback than saving the metadata form next to it. This is the one-shot
+   reaction to the week percentage actually going up — it fires on a real state
+   change, never loops, and spends no new glow slot because it rides the hero,
+   which already owns one (§2.7's "state-change only" clause). */
+@keyframes frost-hero-tick {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.075);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.frost-hero-tick {
+  animation: frost-hero-tick 320ms cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
 /* 2. Today's card: present, static, clearly dimmer than the hero. */
 .frost-today-glow {
   box-shadow:
-    0 0 0 1px rgba(10, 90, 102, 0.55),
-    0 0 24px -6px rgba(20, 184, 201, 0.28);
+    0 0 0 1px rgba(0, 201, 221, 0.3),
+    0 0 30px -6px rgba(0, 239, 255, 0.22);
 }
 
 /* 3. Save button success — one-shot, then settles flat. */
 @keyframes frost-confirm {
   0% {
-    box-shadow: 0 0 0 0 rgba(77, 217, 232, 0);
+    box-shadow: 0 0 0 0 rgba(0, 239, 255, 0);
   }
   35% {
-    box-shadow: 0 0 18px 2px rgba(184, 253, 255, 0.55);
+    box-shadow: 0 0 18px 2px rgba(0, 255, 255, 0.55);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(77, 217, 232, 0);
+    box-shadow: 0 0 0 0 rgba(0, 239, 255, 0);
   }
 }
 .frost-confirm {
@@ -192,6 +246,22 @@ body {
 }
 .frost-check {
   animation: frost-check 140ms ease-out 1;
+}
+
+/* Tactile feedback on the checkbox square itself, not just the tick inside it. */
+@keyframes frost-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.frost-pop {
+  animation: frost-pop 170ms ease-out 1;
 }
 
 @keyframes frost-rise {
@@ -217,18 +287,46 @@ body {
   animation: frost-spin 900ms linear infinite;
 }
 
+/* Windows 11 maps Settings → Accessibility → Visual effects → "Animation
+   effects" onto this query, so a lot of people browse with it on permanently
+   and never know. The old rule killed the mote drift outright, which is very
+   likely why the dust looked frozen.
+
+   The preference exists to protect against vestibular triggers — large,
+   fast, parallaxing or strobing motion. A 1–2px dot travelling 4px/second is
+   none of those. So translation still stops (that's the part the preference
+   is actually about), but the field keeps a slow opacity breath so the canvas
+   isn't dead. The bright tier drops its glow here, because six motionless
+   glowing dots read as UI elements rather than as atmosphere. */
+@keyframes frost-mote-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: var(--mote-opacity);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .frost-mote,
   .frost-hero-glow,
   .frost-hero-text,
+  .frost-hero-tick,
   .frost-confirm,
   .frost-check,
+  .frost-pop,
   .frost-rise,
   .frost-spin {
     animation: none !important;
   }
   .frost-mote {
-    opacity: var(--mote-opacity);
+    animation-name: frost-mote-fade;
+    animation-duration: 7s;
+    animation-timing-function: ease-in-out;
+  }
+  .frost-mote--bright {
+    box-shadow: none;
+    background: var(--color-frost-cyan-500);
   }
   * {
     transition-duration: 0.01ms !important;
@@ -249,7 +347,7 @@ body {
 }
 .frost-field:focus {
   outline: none;
-  border-bottom-color: var(--color-frost-cyan-300);
+  border-bottom-color: var(--color-frost-cyan-200);
 }
 
 .frost-divider {

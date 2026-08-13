@@ -93,10 +93,14 @@ export function ControlPanel({ week, onSave, onClearChecks }: Props) {
           className={`rounded-lg px-5 py-2 text-sm transition-colors duration-150 ${
             flash ? 'frost-confirm' : ''
           }`}
+          // Idle is text on nothing rather than a dead gray slab — one fewer
+          // box on a screen whose whole thesis is "stop boxing things". Dirty
+          // is a real block of accent, and #000 on #00efff is 14.2:1 where the
+          // old #14b8c9 fill was an illegible 3.66:1.
           style={
             dirty
-              ? { backgroundColor: 'var(--color-frost-cyan-500)', color: '#000000' }
-              : { backgroundColor: 'var(--color-frost-surface-2)', color: 'var(--color-frost-text-dim)' }
+              ? { backgroundColor: 'var(--color-frost-cyan-200)', color: '#000000' }
+              : { backgroundColor: 'transparent', color: 'var(--color-frost-cyan-300)' }
           }
         >
           {flash ? 'saved' : 'save'}

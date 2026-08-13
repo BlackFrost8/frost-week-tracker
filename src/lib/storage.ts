@@ -1,10 +1,19 @@
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  type Firestore,
+} from 'firebase/firestore/lite';
 import type { StorageKind, Week } from '../types';
 import { normalizeWeek } from './week';
-import { supabase } from './supabase';
+import { auth, db } from './firebase';
 
 /**
  * Everything the app needs from persistence. Two implementations satisfy it —
- * localStorage and Supabase — and the UI never knows which one it's talking to.
+ * localStorage and Firestore — and the UI never knows which one it's talking to.
  */
 export interface WeekStore {
   readonly kind: StorageKind;
@@ -64,78 +73,57 @@ export const localStore: WeekStore = {
 
 /* ── Cloud ─────────────────────────────────────────────────────────────── */
 
-type WeekRow = {
-  week_start: string;
-  focus: string | null;
-  reward: string | null;
-  affirmation: string | null;
-  days: unknown;
-};
+/**
+ * One document per week at `users/{uid}/weeks/{weekStart}`. The week start is
+ * the document id, which makes `listWeekStarts` a pure id read with no query
+ * or index, and makes every write an idempotent overwrite of one document.
+ *
+ * `Week.days` is an array of day objects that each contain a `tasks` array.
+ * Firestore forbids an array directly inside an array, but an array of maps
+ * that each hold an array is fine — so the existing type serialises as-is.
+ */
+function requireDb(): Firestore {
+  if (!db) throw new Error('Cloud sync is not configured.');
+  return db;
+}
 
-function requireClient() {
-  if (!supabase) throw new Error('Supabase is not configured.');
-  return supabase;
+function requireUid(): string {
+  const uid = auth?.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in.');
+  return uid;
+}
+
+function weeksCol(database: Firestore, uid: string) {
+  return collection(database, 'users', uid, 'weeks');
 }
 
 export const cloudStore: WeekStore = {
   kind: 'cloud',
 
   async listWeekStarts() {
-    const { data, error } = await requireClient()
-      .from('weeks')
-      .select('week_start')
-      .order('week_start', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map((r) => r.week_start as string);
+    const snap = await getDocs(weeksCol(requireDb(), requireUid()));
+    return snap.docs.map((d) => d.id).sort().reverse();
   },
 
   async loadWeek(weekStart) {
-    const { data, error } = await requireClient()
-      .from('weeks')
-      .select('week_start, focus, reward, affirmation, days')
-      .eq('week_start', weekStart)
-      .maybeSingle<WeekRow>();
-    if (error) throw error;
-    if (!data) return null;
-
-    return normalizeWeek(
-      {
-        weekStart: data.week_start,
-        focus: data.focus ?? '',
-        reward: data.reward ?? '',
-        affirmation: data.affirmation ?? '',
-        days: data.days,
-      },
-      weekStart,
-    );
+    const snap = await getDoc(doc(weeksCol(requireDb(), requireUid()), weekStart));
+    if (!snap.exists()) return null;
+    return normalizeWeek(snap.data(), weekStart);
   },
 
   async saveWeek(week) {
-    const client = requireClient();
-    const { data: userData, error: userError } = await client.auth.getUser();
-    if (userError) throw userError;
-    const userId = userData.user?.id;
-    if (!userId) throw new Error('Not signed in.');
-
-    // Upsert on (user_id, week_start) so repeated autosaves update one row.
-    const { error } = await client.from('weeks').upsert(
-      {
-        user_id: userId,
-        week_start: week.weekStart,
-        focus: week.focus,
-        reward: week.reward,
-        affirmation: week.affirmation,
-        days: week.days,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,week_start' },
-    );
-    if (error) throw error;
+    await setDoc(doc(weeksCol(requireDb(), requireUid()), week.weekStart), {
+      weekStart: week.weekStart,
+      focus: week.focus,
+      reward: week.reward,
+      affirmation: week.affirmation,
+      days: week.days,
+      updatedAt: new Date().toISOString(),
+    });
   },
 
   async deleteWeek(weekStart) {
-    const { error } = await requireClient().from('weeks').delete().eq('week_start', weekStart);
-    if (error) throw error;
+    await deleteDoc(doc(weeksCol(requireDb(), requireUid()), weekStart));
   },
 };
 
@@ -144,9 +132,13 @@ export const cloudStore: WeekStore = {
    the cloud. Cloud rows always win on conflict — the account is the source of
    truth once it exists, and we never clobber data written from another device. */
 
-const MIGRATED_FLAG = 'frost-week-tracker:migrated';
+/** Keyed per account: signing a second Google account in on the same browser
+    used to silently skip its migration, because the flag was global. */
+const migratedFlag = (uid: string) => `frost-week-tracker:migrated:${uid}`;
 
 export async function migrateLocalToCloud(): Promise<number> {
+  const uid = requireUid();
+  const MIGRATED_FLAG = migratedFlag(uid);
   if (localStorage.getItem(MIGRATED_FLAG) === 'yes') return 0;
 
   const localWeeks = readAll();
@@ -174,8 +166,4 @@ export async function migrateLocalToCloud(): Promise<number> {
 
   localStorage.setItem(MIGRATED_FLAG, 'yes');
   return uploaded;
-}
-
-export function resetMigrationFlag(): void {
-  localStorage.removeItem(MIGRATED_FLAG);
 }

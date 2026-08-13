@@ -8,13 +8,37 @@ type Props = {
   onDelete: () => void;
   /** Compact rows are used inside collapsed (non-today) days. */
   dense?: boolean;
+  /** Set on the row `+ add task` just created, so it is typable immediately. */
+  autoFocus?: boolean;
 };
 
-export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false }: Props) {
+export function TaskRow({
+  task,
+  onToggle,
+  onLabelChange,
+  onDelete,
+  dense = false,
+  autoFocus = false,
+}: Props) {
   const isBlank = task.label.trim() === '';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.label);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // A one-shot pop when the box becomes checked. Checking a task is the core
+  // verb of the app and used to produce less feedback than saving the metadata
+  // form next to it.
+  const [popping, setPopping] = useState(false);
+  const prevDone = useRef(task.done);
+  useEffect(() => {
+    if (task.done && !prevDone.current) {
+      setPopping(true);
+      const t = setTimeout(() => setPopping(false), 190);
+      prevDone.current = task.done;
+      return () => clearTimeout(t);
+    }
+    prevDone.current = task.done;
+  }, [task.done]);
 
   useEffect(() => {
     if (!editing) setDraft(task.label);
@@ -27,12 +51,21 @@ export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false
   const commit = () => {
     setEditing(false);
     const trimmed = draft.trim();
+    // Emptying a row removes it rather than leaving an inert blank behind —
+    // blanks have no delete affordance of their own, so they used to be
+    // unremovable once created. This also gives `+ add task` a natural cancel:
+    // click it, click away without typing, the row goes.
+    if (trimmed === '') {
+      onDelete();
+      return;
+    }
     if (trimmed !== task.label) onLabelChange(trimmed);
   };
 
   const cancel = () => {
     setDraft(task.label);
     setEditing(false);
+    if (task.label.trim() === '') onDelete();
   };
 
   const pad = dense ? 'py-1' : 'py-1.5';
@@ -41,12 +74,13 @@ export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false
     return (
       <div className={`flex items-center gap-3 ${pad}`}>
         <span
-          className="h-4 w-4 shrink-0 rounded-[3px]"
-          style={{ border: '1px solid var(--frost-hairline)' }}
+          className="h-[18px] w-[18px] shrink-0 rounded-[4px]"
+          style={{ border: '1px solid rgba(0,239,255,0.18)' }}
           aria-hidden="true"
         />
         <input
           ref={editing ? inputRef : undefined}
+          autoFocus={autoFocus}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -63,10 +97,7 @@ export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false
   }
 
   return (
-    <div
-      onClick={onToggle}
-      className={`group flex cursor-pointer items-center gap-3 ${pad}`}
-    >
+    <div onClick={onToggle} className={`group flex cursor-pointer items-center gap-3 ${pad}`}>
       <button
         type="button"
         role="checkbox"
@@ -76,11 +107,19 @@ export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false
           e.stopPropagation();
           onToggle();
         }}
-        className="grid h-4 w-4 shrink-0 place-items-center rounded-[3px] transition-colors duration-150"
+        className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] transition-colors duration-150 ${
+          popping ? 'frost-pop' : ''
+        }`}
+        // Checked boxes are the app's largest source of colour, and they earn
+        // it — the screen literally saturates as the week gets done. A flat
+        // fill spends nothing from the glow budget: it is chroma, not light.
         style={
           task.done
-            ? { backgroundColor: 'var(--color-frost-cyan-500)', border: '1px solid var(--color-frost-cyan-500)' }
-            : { border: '1px solid rgba(255,255,255,0.16)', backgroundColor: 'transparent' }
+            ? {
+                backgroundColor: 'var(--color-frost-cyan-200)',
+                border: '1px solid var(--color-frost-cyan-200)',
+              }
+            : { border: '1px solid rgba(0,239,255,0.22)', backgroundColor: 'rgba(0,239,255,0.03)' }
         }
       >
         {task.done && (
@@ -114,7 +153,7 @@ export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false
             setEditing(true);
           }}
           aria-label={`Edit ${task.label}`}
-          className="grid h-6 w-6 place-items-center rounded text-frost-text-faint transition-colors hover:text-frost-text-dim"
+          className="grid h-6 w-6 place-items-center rounded text-frost-text-faint transition-colors hover:text-frost-cyan-300"
         >
           <svg viewBox="0 0 14 14" className="h-3 w-3" aria-hidden="true">
             <path
@@ -133,7 +172,7 @@ export function TaskRow({ task, onToggle, onLabelChange, onDelete, dense = false
             onDelete();
           }}
           aria-label={`Delete ${task.label}`}
-          className="grid h-6 w-6 place-items-center rounded text-frost-text-faint transition-colors hover:text-frost-text-dim"
+          className="grid h-6 w-6 place-items-center rounded text-frost-text-faint transition-colors hover:text-frost-alert"
         >
           <svg viewBox="0 0 14 14" className="h-3 w-3" aria-hidden="true">
             <path

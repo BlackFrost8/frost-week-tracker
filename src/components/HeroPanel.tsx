@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Week } from '../types';
 import { weekOverallPct, weekTotals } from '../lib/week';
 import { ProgressRing } from './ProgressRing';
@@ -6,20 +7,40 @@ import { ProgressRing } from './ProgressRing';
  * The signature element (§2.4). Everything else on the screen is deliberately
  * quieter than this: it owns the only glow, the only looping animation, and the
  * only type above 32px.
+ *
+ * The stroke used to be 2px on a 244px ring — a 0.8% stroke ratio, so 97% of
+ * the "focal point" was empty black, and the 26px day rings were carrying a
+ * proportionally 9x heavier stroke than it. The hierarchy was inverted. 12px
+ * makes the same element roughly 15x more present without adding a single new
+ * bordered or glowing node.
  */
 export function HeroPanel({ week }: { week: Week }) {
   const pct = weekOverallPct(week);
   const { done, total } = weekTotals(week);
 
+  // A one-shot reaction when the number actually climbs, so finishing a task
+  // registers somewhere other than the checkbox you just clicked.
+  const [ticking, setTicking] = useState(false);
+  const prevPct = useRef(pct);
+  useEffect(() => {
+    if (pct > prevPct.current) {
+      setTicking(true);
+      const t = setTimeout(() => setTicking(false), 340);
+      prevPct.current = pct;
+      return () => clearTimeout(t);
+    }
+    prevPct.current = pct;
+  }, [pct]);
+
   return (
     <section className="flex flex-col items-center" aria-label={`Week progress: ${pct}% complete`}>
       <div className="relative grid place-items-center">
-        <ProgressRing percent={pct} size={244} strokeWidth={2} variant="hero" />
+        <ProgressRing percent={pct} size={244} strokeWidth={12} variant="hero" />
 
-        <div className="absolute flex flex-col items-center">
-          <span className="frost-hero-text font-display text-5xl leading-none tracking-tight text-frost-cyan-100">
+        <div className={`absolute flex flex-col items-center ${ticking ? 'frost-hero-tick' : ''}`}>
+          <span className="frost-hero-text font-display text-5xl leading-none tracking-tight text-frost-cyan-200">
             {pct}
-            <span className="ml-0.5 align-top text-lg text-frost-cyan-700">%</span>
+            <span className="ml-0.5 align-top text-lg text-frost-cyan-300">%</span>
           </span>
           <span className="mt-3 font-mono text-sm tabular-nums text-frost-text-dim">
             {done} / {total}

@@ -22,9 +22,6 @@ export const DAY_SHORT: Record<DayId, string> = {
   sun: 'Sun',
 };
 
-/** Rows each day ships with on a fresh week (spec §4.4). */
-const ROWS_PER_DAY = 10;
-
 /** A few prefilled rows so a new week never looks broken or empty. */
 const STARTER_TASKS = [
   'Wake up at 6:00',
@@ -105,12 +102,15 @@ export function formatLongDate(iso: string): string {
 
 /* ── Week construction ─────────────────────────────────────────────────── */
 
+/**
+ * Days used to ship padded to a fixed 10 rows, so a fresh day carried 5 real
+ * tasks and 5 permanently blank ones. Blanks render as live inputs with an
+ * "Add a task" placeholder, which meant every expanded day showed six separate
+ * ways to add a task. A day now contains only real tasks; the single `+ add
+ * task` button appends the one blank row that is being typed into.
+ */
 function makeTasks(prefill: boolean): Task[] {
-  return Array.from({ length: ROWS_PER_DAY }, (_, i) => ({
-    id: uid(),
-    label: prefill ? (STARTER_TASKS[i] ?? '') : '',
-    done: false,
-  }));
+  return prefill ? STARTER_TASKS.map((label) => ({ id: uid(), label, done: false })) : [];
 }
 
 export function createWeek(weekStart: string, prefill = true): Week {
@@ -190,6 +190,12 @@ export function normalizeWeek(raw: unknown, weekStart: string): Week {
 
   const days = DAY_IDS.map((id, i) => {
     const incoming = Array.isArray(r.days) ? r.days.find((d) => d?.id === id) : undefined;
+    // Blank rows are dropped on load, which also sweeps out the padding that
+    // older saved weeks are carrying. This has to happen here as well as in
+    // makeTasks: normalizeWeek runs on every load for both stores, so a fix
+    // that only touched the seed would silently re-pad on the next refresh.
+    // Safe to do at this point — normalizeWeek never runs mid-edit, so it
+    // cannot delete a row someone is currently typing into.
     const tasks: Task[] = Array.isArray(incoming?.tasks)
       ? incoming.tasks
           .filter((t): t is Task => typeof t === 'object' && t !== null)
@@ -198,12 +204,8 @@ export function normalizeWeek(raw: unknown, weekStart: string): Week {
             label: typeof t.label === 'string' ? t.label : '',
             done: t.done === true,
           }))
+          .filter((t) => t.label.trim() !== '')
       : [];
-
-    // Keep at least the baseline row count so the column never looks collapsed.
-    while (tasks.length < ROWS_PER_DAY) {
-      tasks.push({ id: uid(), label: '', done: false });
-    }
 
     return {
       id,

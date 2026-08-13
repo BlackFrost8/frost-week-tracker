@@ -28,13 +28,10 @@ jobs:
 
       - run: npm ci
 
+      # The Firebase config is committed in src/lib/firebase-config.ts (public
+      # client identifiers — Firestore rules are the real control), so no
+      # repository secrets or variables are needed to deploy.
       - run: npm run build
-        env:
-          # Optional. Set these as repository secrets to bake your Supabase
-          # project into the deployed build. Without them the app still deploys
-          # and runs in local-only mode, and you can connect from inside the UI.
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/configure-pages@v5
 

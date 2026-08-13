@@ -1,0 +1,16 @@
+// Paste these into: Firebase console -> Firestore Database -> Rules -> Publish.
+//
+// Every week document lives under the uid that owns it, and the only way to
+// touch one is to be signed in as that uid. This is what makes the Firebase
+// config in src/lib/firebase-config.ts safe to commit publicly: those values
+// identify the project, they don't grant access to anything.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/weeks/{weekStart} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

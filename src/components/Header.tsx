@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SyncState } from '../types';
+import type { Profile } from '../hooks/useAuth';
 import { addDays, currentWeekStart, fromISODate, formatLongDate } from '../lib/week';
+import { Avatar } from './AccountDialog';
 
 type Props = {
   weekStart: string;
   knownWeeks: string[];
   onGoToWeek: (weekStart: string) => void;
   sync: SyncState;
-  email: string | null;
-  onSignOut: () => void;
+  profile: Profile | null;
   onOpenAccount: () => void;
 };
 
@@ -27,8 +28,7 @@ export function Header({
   knownWeeks,
   onGoToWeek,
   sync,
-  email,
-  onSignOut,
+  profile,
   onOpenAccount,
 }: Props) {
   const thisWeek = currentWeekStart();
@@ -135,33 +135,34 @@ export function Header({
         {/* Sync is a real feature, so it gets a real (tiny) affordance — and
             says nothing at all when there is nothing to report (§2.4). */}
         {sync === 'saving' && <span className="font-mono text-xs text-frost-text-faint">saving</span>}
-        {sync === 'error' && <span className="font-mono text-xs text-frost-cyan-700">save failed</span>}
+        {/* A data-loss warning was previously rendered in cyan-700 at 2.67:1 —
+            a functional bug, not a style nit. */}
+        {sync === 'error' && (
+          <span className="font-mono text-xs text-frost-alert">save failed</span>
+        )}
 
-        {email ? (
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={onOpenAccount}
-              className="max-w-[13rem] truncate text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-text"
-              title={email}
-            >
-              {email}
-            </button>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-text-dim"
-            >
-              sign out
-            </button>
-          </div>
+        {/* The profile is one control, not two: avatar plus first name, opening
+            the account card. Sign-out lives in there rather than sitting in the
+            header competing for attention. */}
+        {profile ? (
+          <button
+            type="button"
+            onClick={onOpenAccount}
+            className="group flex items-center gap-2.5"
+            title={profile.email ?? undefined}
+          >
+            <Avatar profile={profile} size={26} />
+            <span className="max-w-[10rem] truncate text-sm text-frost-text-dim transition-colors duration-150 group-hover:text-frost-text">
+              {profile.name?.split(' ')[0] ?? profile.email}
+            </span>
+          </button>
         ) : (
           <button
             type="button"
             onClick={onOpenAccount}
             className="text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-cyan-300"
           >
-            sync devices
+            sign in
           </button>
         )}
       </div>
