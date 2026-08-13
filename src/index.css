@@ -353,3 +353,24 @@ body {
 .frost-divider {
   border-top: 1px solid var(--frost-hairline);
 }
+
+/* ── Shell ───────────────────────────────────────────────────────────────────
+   The page gutter and max width live here rather than in utilities because
+   they are the single most load-bearing measurement in the layout: at 1152px
+   a 1440p monitor spent 55% of its width on empty black, and a missing gutter
+   puts content flush against a phone's screen edge. Plain unlayered CSS so it
+   cannot depend on variant generation. */
+.frost-shell {
+  width: 100%;
+  max-width: 1600px;
+  margin-inline: auto;
+  padding-inline: 18px;
+  padding-block: 32px;
+}
+
+@media (min-width: 640px) {
+  .frost-shell {
+    padding-inline: 32px;
+    padding-block: 40px;
+  }
+}

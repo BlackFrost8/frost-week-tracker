@@ -84,6 +84,12 @@ export function formatShortDate(iso: string): string {
 /** "2025-05-18" -> "18.5.25". Compact form used in day list rows. */
 export const shortDayDate = formatShortDate;
 
+/** "2025-05-18" -> "18.5". Compact enough for a week-strip cell. */
+export function cellDate(iso: string): string {
+  const d = fromISODate(iso);
+  return `${d.getDate()}.${d.getMonth() + 1}`;
+}
+
 /** "2025-05-18" -> "18 May". Used in today's card header. */
 export function longDayDate(iso: string): string {
   const d = fromISODate(iso);
@@ -166,6 +172,19 @@ export function weekOverallPct(week: Week): number {
   }
   if (total === 0) return 0;
   return Math.round((done / total) * 100);
+}
+
+/**
+ * Running total of completed tasks across the week, Monday first. Feeds the
+ * pace curve, which is the only thing in the app that answers "am I on track"
+ * rather than "how much is done".
+ */
+export function weekCumulative(week: Week): number[] {
+  let running = 0;
+  return week.days.map((day) => {
+    running += completedCount(day);
+    return running;
+  });
 }
 
 export function weekTotals(week: Week): { done: number; total: number } {

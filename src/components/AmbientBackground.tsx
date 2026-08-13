@@ -7,13 +7,13 @@ import { useMemo } from 'react';
  * floor, with one in five allowed to be genuinely visible, is what makes it
  * read as depth.
  *
- * 80 is a deliberate ceiling, not an arbitrary number: these are absolutely
- * positioned spans animating only transform and opacity, so each is its own
- * compositor layer and costs nothing on the CPU. 80 layers is comfortable on a
- * decade-old integrated GPU. Past ~250 a canvas rewrite would start to pay for
- * itself, and the field would read as a starfield rather than as dust.
+ * These are absolutely positioned spans animating only transform and opacity,
+ * so each is its own compositor layer and costs nothing on the CPU. 110 layers
+ * is comfortable on a decade-old integrated GPU. Past ~250 a canvas rewrite
+ * would start to pay for itself, and the field would read as a starfield
+ * rather than as dust — that is the real ceiling, not performance.
  */
-const MOTE_COUNT = 80;
+const MOTE_COUNT = 110;
 
 /** One in five. Enough to catch the eye, few enough to still be atmosphere. */
 const BRIGHT_EVERY = 5;
@@ -38,12 +38,11 @@ export function AmbientBackground() {
           left: Math.random() * 100,
           top: Math.random() * 100,
           // Small, mostly-upward drift so it reads as settling dust, not snow.
-          // Speed is deliberately NOT the lever here — a faster mote reads as
-          // weather. More of them, each still slow, means more of the field is
-          // in the visible part of its cycle at any moment.
-          dx: `${(Math.random() - 0.5) * 120}px`,
-          dy: `${-40 - Math.random() * 140}px`,
-          duration: 15 + Math.random() * 25,
+          // Roughly 1.5x the previous rate — enough to register as movement
+          // rather than as a still image, while staying well short of weather.
+          dx: `${(Math.random() - 0.5) * 140}px`,
+          dy: `${-50 - Math.random() * 160}px`,
+          duration: 11 + Math.random() * 19,
           delay: -Math.random() * 30,
           opacity: bright ? 0.55 + Math.random() * 0.35 : 0.14 + Math.random() * 0.22,
         };

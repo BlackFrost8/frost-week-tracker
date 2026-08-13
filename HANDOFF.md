@@ -11,14 +11,25 @@ Context for picking this project up in a new session. Written 13 Aug 2026.
 | Repo | https://github.com/BlackFrost8/frost-week-tracker (public) |
 | Live URL | https://planner.froststudio.org |
 | Local path | `C:\Users\josua\Downloads\LifeOrg` |
-| Branch | `main` — **1 commit ahead of origin, not yet pushed** |
+| Branch | `design/chroma-budget-and-google-login` — pushed, **PR not opened yet** |
 | Build | Passing (`npm run build`, type-check clean) |
-| App works locally | Yes — verified in-browser |
+| App works locally | Yes — behaviour verified in-browser; **layout not seen rendered**, see §8 |
 | **Live site works** | **No — blocked on one GitHub setting, see §2** |
 | Cloud sync | Code complete, **never configured or tested against a real project** |
 
-Two commits of substance: `b0b3305` (build) and the redesign (rebased onto GitHub's
-`d3f9f8d` CNAME commit). Nothing is half-finished in the code.
+`main` on the remote is still at `d3f9f8d` (the CNAME commit). Everything since
+lives on the feature branch, four commits deep:
+
+| | |
+| --- | --- |
+| `b0b3305` | Original build |
+| `d3d9872` | First redesign — true black, budgeted glow |
+| `05fdbdd` | This file |
+| `6a21b36` | Chroma budget, Google login, add-task clutter |
+| *(this one)* | Layout: week strip, three regions, spacing cadence |
+
+**`gh` is not installed on this machine**, so PRs have to be opened in the
+browser. The compare link is in §2.4. Nothing in the code is half-finished.
 
 ---
 
@@ -39,6 +50,15 @@ Fix: **Repo → Settings → Pages → Build and deployment → Source → "GitH
 
 This is not a code bug. Do not "fix" it by changing `vite.config.ts` `base` — that is
 already correct (`base: './'`, which works on both a project site and a custom domain).
+
+### 2.4 Open the PR
+
+`gh` is not installed, so this is a browser step:
+
+https://github.com/BlackFrost8/frost-week-tracker/compare/main...design/chroma-budget-and-google-login?expand=1
+
+The branch carries three unpushed-to-main commits plus this session's layout
+work. Merging it is what puts everything on `main`.
 
 ### 2.2 Push
 
@@ -107,17 +127,36 @@ src/
 │   ├── useAuth.ts         Session state + Profile, Google sign in/out
 │   └── useWeek.ts         Current Week + every mutation + debounced autosave
 └── components/
-    ├── AmbientBackground  Fixed black canvas, cyan wash, 80 drifting motes
+    ├── AmbientBackground  Fixed black canvas, cyan wash, 110 drifting motes
+    ├── WeekStrip          The 7 days, horizontal. Selects; does not expand
+    ├── DayCard            The focal card — shows whichever day is selected
     ├── HeroPanel          The signature element — owns the only looping glow
-    ├── TodayCard          The one bordered/glowing card, task list open
-    ├── DayRow             Non-today days: borderless, collapsed, expand on click
+    ├── PaceCurve          Cumulative done vs even pace. Line only, no fill
+    ├── IntentPanel        Focus/Reward/Affirmation as statements + clear checks
     ├── ProgressRing       variant: 'hero' | 'quiet'
     ├── TaskRow            Checkbox + inline-editable label
-    ├── ControlPanel       Focus/Reward/Affirmation + Save/Clear
     ├── Header             Wordmark, week nav, profile (avatar + first name)
     ├── AccountDialog      Google sign-in + profile card; also exports `Avatar`
     └── GoogleMark         The official "G", used inside our own button
 ```
+
+`TodayCard`, `DayRow` and `ControlPanel` were deleted in the layout pass — they
+are `DayCard`, `WeekStrip` and `IntentPanel` now. Don't resurrect them.
+
+### Layout regions
+
+```
+              ┌──────────────── header ────────────────┐   96px below
+              ├────────────── WeekStrip ───────────────┤   full bleed, 7 cells
+  xl:  [ HeroPanel + PaceCurve ] [ DayCard ] [ IntentPanel ]
+  md:  [ DayCard ]               [ Hero / Curve / Intent stacked right ]
+  sm:  Hero → DayCard → PaceCurve → IntentPanel, single column
+```
+
+The shell is `.frost-shell` (plain CSS in `index.css`, **not** utilities) at
+`max-width: 1600px`. DOM order is Hero, DayCard, Curve, Intent; the two
+read-only blocks are the ones whose grid placement moves between breakpoints,
+so visual order never disagrees with keyboard order for anything focusable.
 
 `localStore` and `cloudStore` both implement `WeekStore`. **No component knows which is
 active** — `App.tsx` picks one based on auth state and passes it to `useWeek`. Keep it
@@ -163,7 +202,23 @@ Don't "fix" these without reading why.
    and this is the one call here that's expensive to reverse. It was made knowingly:
    both features are out of scope, and the Supabase path had never run against a live
    database either, so no proven code was thrown away.
-9. **`signInWithPopup`, not `signInWithRedirect`.** Redirect needs cross-origin storage
+9. **The strip selects, it does not expand.** Days used to expand inline. One
+   card in one place means one text measure for every task, and it fixes a
+   state that was previously broken: a week not containing today rendered *no
+   card at all*. `App.tsx` holds `selected: DayId`, defaulting to today or to
+   Monday.
+10. **An unplanned day renders as a hairline, not a 0% bar.** `completionPct`
+    returns 0 for both "nothing planned" and "planned, did nothing" — opposite
+    states that must not share a glyph. `WeekStrip` branches on `totalCount`.
+11. **Intent fields autosave; there is no Save button.** Everything else in the
+    app autosaves, so a Save governing only three fields was the odd one out.
+    This retired one of the four permitted glow slots — the budget got cheaper,
+    not more expensive.
+12. **The hero is 176px, deliberately smaller than it was.** At 244px it won
+    the squint test against the checkboxes, which is the actual job on an
+    Operate surface. It still owns the only glow. Signature and dominant are
+    separable — don't "fix" this by enlarging it.
+13. **`signInWithPopup`, not `signInWithRedirect`.** Redirect needs cross-origin storage
    access that third-party cookie blocking breaks, and it would need a callback path that
    GitHub Pages would 404 on. It must also be called synchronously from the click handler
    — put an `await` before it and the browser blocks the popup.
@@ -204,6 +259,28 @@ saturates as the week gets completed.**
 Other rules, unchanged: true black `#000000` background; exactly **one** uppercase
 element (the "Frost" wordmark); fields are underlines, not boxes; non-today days get no
 border and no card; type scale is 12/14/16/20/32/56 and nothing else.
+
+### Spacing cadence
+
+Spacing had fourteen ad-hoc values and no rule, while type was pinned to six and
+enforced. Three structurally different boundaries — header→intent, intent→work,
+today→rest — all rendered at 48/48/40, so nothing told you which mattered. The
+scale is now roughly 2x per nesting level:
+
+```
+ 12  task -> task            (the fixed point; it was always right)
+ 24  group -> group
+ 48  block -> block, and every grid gap
+ 96  chrome -> work          (the largest interval on the page)
+```
+
+### Dead width
+
+`max-w-6xl` (1152px) was capping the shell on every desktop: 40% of a 1920
+viewport and **55% of a 1440p one** was empty side margin. Now `1600px`, which
+puts it at ~17% at 1920. The horizontal `WeekStrip` is what earns that width —
+no text measure grew. The card is capped at 660px and centred, so surplus width
+becomes symmetric gutter rather than a hole beside a 490px text measure.
 
 **New floor (the guard only had a ceiling):** any colour meant to be *read at rest* —
 not just on hover or focus — must clear ~3:1 contrast for large/decorative elements and
@@ -286,9 +363,29 @@ Three false failures cost time last session. All are environment artifacts, not 
    snippet that awaits a rAF will simply time out.
 5. **React state updates need a tool-call boundary to flush.** Clicking and then
    asserting inside one `javascript_tool` call sees the old DOM. Split them.
+6. **`getComputedStyle` goes stale on existing elements when the pane is hidden.**
+   This is the big one — it cost most of a session. With the pane not displayed
+   the page stops compositing frames, and computed *layout* values freeze at the
+   last paint. The tell: a freshly created probe element with an identical class
+   string returns the correct value while the real element returns the old one,
+   and even `el.style.paddingLeft = '18px'` reads back as `0px`. If you see a
+   value that is arithmetically impossible, suspect this before suspecting the
+   CSS. Verify against the built files instead.
+7. **Tailwind v4 emits range media queries.** `grep '@media (min-width'` over
+   `dist/assets/*.css` returns **zero matches** and looks like catastrophic
+   breakage. The real output is `@media (width>=40rem)`. Likewise, a CSSOM walk
+   that doesn't descend into `CSSLayerBlockRule` will find no utilities at all,
+   because everything lives inside `@layer utilities`. Both of these produced
+   convincing false alarms.
+8. **The dev server's Tailwind scan goes stale after new classes are added.**
+   Classes written this session may be missing from the dev CSS while being
+   present in `dist`. When a utility mysteriously doesn't apply, rebuild and
+   check `dist/assets/*.css` before changing code. Use the `frost-preview`
+   launch config (`npm run preview`, port 4173) to inspect the real build.
 
 Also: screenshots fail unless the Browser pane is actually displayed. Verify via
-`read_page` / `get_page_text` / DOM queries instead.
+`read_page` / `get_page_text` / DOM queries instead — and see trap 6 for how far
+to trust those.
 
 ---
 
@@ -307,6 +404,20 @@ Also: screenshots fail unless the Browser pane is actually displayed. Verify via
   app loads on navigation and writes on a debounce, so it has no use for realtime
   listeners or offline persistence, which is most of the full client's weight.
 - **Account deletion** is not implemented. Sign-out is.
+- **The rendered page gutter was never visually confirmed.** `.frost-shell`'s
+  padding is correct in the built CSS and is unlayered so nothing can override
+  it, but the pane stopped compositing before it could be seen. **Look at this
+  on a phone first thing** — if content touches the screen edge, that rule is
+  where to look.
+- **No screenshot of the new layout exists.** Everything was verified through
+  DOM measurement and the built files.
+- **`PaceCurve` returns `null` when the week has no tasks at all**, so the left
+  rail is short on a genuinely empty week. Acceptable, but it is the emptiest
+  reachable desktop state now.
+- **No PRODUCT.md.** The Impeccable skill flagged this: there is no captured
+  product truth, so each session re-infers intent from the code. `$impeccable
+  init` would fix it and is the cheapest next improvement to how this project
+  is worked on.
 - **Spec files untracked.** `frost-week-tracker-spec.md` and `frost-design-overhaul.md`
   sit in the project root uncommitted. The user was asked and hasn't decided.
 - **Multi-week analytics, habit streaks, native app** — all explicitly out of scope.
@@ -316,10 +427,13 @@ Also: screenshots fail unless the Browser pane is actually displayed. Verify via
 ## 9. Commands
 
 ```bash
-npm run dev        # dev server on :5173
+npm run dev        # dev server on :5173  (CSS can go stale — see §7.8)
 npm run build      # type-check + production build to dist/
 npm run typecheck  # types only
+npm run preview    # serve the real build on :4173 — trust this one
 ```
+
+`.claude/launch.json` has both `frost-dev` and `frost-preview` configured.
 
 Git identity is set **locally to this repo only**: `BlackFrost8 <joshoffrost8@gmail.com>`.
 The repo is public, so that email is visible in commit history — the user chose this

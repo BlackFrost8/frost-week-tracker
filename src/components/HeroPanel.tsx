@@ -13,6 +13,11 @@ import { ProgressRing } from './ProgressRing';
  * proportionally 9x heavier stroke than it. The hierarchy was inverted. 12px
  * makes the same element roughly 15x more present without adding a single new
  * bordered or glowing node.
+ *
+ * Diameter came back down from 244 to 176 afterwards. It still owns the only
+ * glow, but on an Operate surface it was winning the squint test against the
+ * checkboxes — the visitor's actual job — from the far side of the screen.
+ * Signature and dominant are separable; this is the signature.
  */
 export function HeroPanel({ week }: { week: Week }) {
   const pct = weekOverallPct(week);
@@ -35,7 +40,7 @@ export function HeroPanel({ week }: { week: Week }) {
   return (
     <section className="flex flex-col items-center" aria-label={`Week progress: ${pct}% complete`}>
       <div className="relative grid place-items-center">
-        <ProgressRing percent={pct} size={244} strokeWidth={12} variant="hero" />
+        <ProgressRing percent={pct} size={176} strokeWidth={10} variant="hero" />
 
         <div className={`absolute flex flex-col items-center ${ticking ? 'frost-hero-tick' : ''}`}>
           <span className="frost-hero-text font-display text-5xl leading-none tracking-tight text-frost-cyan-200">
