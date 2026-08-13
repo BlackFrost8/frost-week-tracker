@@ -11,14 +11,13 @@ Context for picking this project up in a new session. Written 13 Aug 2026.
 | Repo | https://github.com/BlackFrost8/frost-week-tracker (public) |
 | Live URL | https://planner.froststudio.org |
 | Local path | `C:\Users\josua\Downloads\LifeOrg` |
-| Branch | `design/chroma-budget-and-google-login` — pushed, **PR not opened yet** |
+| Branch | `main` — the design branch was fast-forwarded into it, **not pushed yet** |
 | Build | Passing (`npm run build`, type-check clean) |
-| App works locally | Yes — behaviour verified in-browser; **layout not seen rendered**, see §8 |
+| App works locally | Yes — rendered and verified in-browser |
 | **Live site works** | **No — blocked on one GitHub setting, see §2** |
 | Cloud sync | Code complete, **never configured or tested against a real project** |
 
-`main` on the remote is still at `d3f9f8d` (the CNAME commit). Everything since
-lives on the feature branch, four commits deep:
+Local `main` now carries everything:
 
 | | |
 | --- | --- |
@@ -26,10 +25,32 @@ lives on the feature branch, four commits deep:
 | `d3d9872` | First redesign — true black, budgeted glow |
 | `05fdbdd` | This file |
 | `6a21b36` | Chroma budget, Google login, add-task clutter |
-| *(this one)* | Layout: week strip, three regions, spacing cadence |
+| `60ea184` | Layout: week strip, three regions, spacing cadence |
+| *(latest)* | Local-first sync, cross-device fixes, clock/timer, click ripple |
 
-**`gh` is not installed on this machine**, so PRs have to be opened in the
-browser. The compare link is in §2.4. Nothing in the code is half-finished.
+No PR is needed — the design work is on `main` now. **`gh` is not installed on
+this machine.** Nothing in the code is half-finished.
+
+### What the latest commit changed, and why
+
+A council review traced the school-Chromebook → home-PC round trip and found
+four ways to lose work. All four are fixed; the reasoning is in §5.
+
+1. **`cloudStore` is now local-first.** Every save writes localStorage
+   synchronously *before* the network, and a week the cloud rejected stays
+   flagged `dirty` and is retried by `flushPending()`. Previously, signing in
+   converted a save that could not fail into a bare network call whose entire
+   failure handling was one dim word in the header.
+2. **The tab re-reads on focus/visibility.** This is the whole mechanism by
+   which one device sees another's work; without it a tab showed its mount-time
+   snapshot forever and the next click uploaded that stale week over the newer
+   one.
+3. **Migration is gated.** `ready` stays false until migration for the signed-in
+   uid finishes, so the first sign-in can't upload real weeks and then overwrite
+   them with a blank starter week.
+4. **Local data is uid-scoped.** Signed-in work mirrors to
+   `frost-week-tracker:mirror:{uid}`, so signing out no longer shows the
+   previous person's tasks on a shared device.
 
 ---
 
@@ -124,10 +145,13 @@ src/
 │   ├── firebase.ts        App / auth / Firestore Lite handles; null when unconfigured
 │   └── firebase-config.ts The six pasted values — the only setup step in the app
 ├── hooks/
-│   ├── useAuth.ts         Session state + Profile, Google sign in/out
-│   └── useWeek.ts         Current Week + every mutation + debounced autosave
+│   ├── useAuth.ts         Session state + Profile, Google + email sign in/out
+│   ├── useWeek.ts         Current Week + every mutation + debounced autosave
+│   ├── useClock.ts        Stopwatch/countdown derived from one epoch timestamp
+│   └── useClickRipple.ts  Capture-phase click bloom, own layer, JS-gated
 └── components/
     ├── AmbientBackground  Fixed black canvas, cyan wash, 110 drifting motes
+    ├── Clock              Wall clock + two-mode timer, lives in the Header
     ├── WeekStrip          The 7 days, horizontal. Selects; does not expand
     ├── DayCard            The focal card — shows whichever day is selected
     ├── HeroPanel          The signature element — owns the only looping glow
@@ -166,6 +190,10 @@ alone.
 
 Cloud documents live at `users/{uid}/weeks/{weekStart}` — the week start is the document
 id, so `listWeekStarts` is a pure id read needing no query or index.
+
+`cloudStore` is **local-first**: it is `localStore` scoped to a uid, plus a Firestore
+mirror. It is not a replacement for local storage, and must not be turned back into one
+— that was the single largest data-loss risk in the app.
 
 ---
 
@@ -222,6 +250,30 @@ Don't "fix" these without reading why.
    access that third-party cookie blocking breaks, and it would need a callback path that
    GitHub Pages would 404 on. It must also be called synchronously from the click handler
    — put an `await` before it and the browser blocks the popup.
+14. **Email/password sign-in exists alongside Google on purpose.** It is folded
+    behind "use an email and password instead" and looks redundant. It is the
+    fallback for a managed school Chromebook that blocks third-party OAuth
+    consent or popups — the one device where Google sign-in failing would make
+    the whole app pointless. Requires Email/Password enabled in the Firebase
+    console alongside Google.
+15. **The click ripple checks `prefers-reduced-motion` in JS, per click, and
+    skips creating the node.** Suppressing it the way every other animation is
+    suppressed (`animation: none`) would mean `animationend` never fires, its
+    cleanup never runs, and a glowing dot sticks to the screen permanently. The
+    CSS `display: none` under that media query is belt-and-braces, not the
+    mechanism.
+16. **The ripple listens in the capture phase.** `TaskRow` and `AccountDialog`
+    call `stopPropagation()` in the bubble phase for their own logic, so a
+    normal listener would go dead on checkboxes, edit/delete and modal content —
+    the most-clicked things in the app. It never calls `preventDefault` or
+    `stopPropagation` itself, so it cannot break anything downstream.
+17. **The timer derives from `Date.now()`; it never accumulates ticks.** Chrome
+    throttles background-tab timers hard, so a tick counter comes back minutes
+    short after a closed lid. The interval only decides *when to re-render*.
+    `performance.now()` is not an option — it resets on every navigation and so
+    cannot be persisted.
+18. **Timer state is device-local and never synced.** A timer is about the room
+    you're in; syncing it would mean pausing at home stops a run at school.
 
 ---
 

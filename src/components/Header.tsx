@@ -3,6 +3,7 @@ import type { SyncState } from '../types';
 import type { Profile } from '../hooks/useAuth';
 import { addDays, currentWeekStart, fromISODate, formatLongDate } from '../lib/week';
 import { Avatar } from './AccountDialog';
+import { Clock } from './Clock';
 
 type Props = {
   weekStart: string;
@@ -81,6 +82,8 @@ export function Header({
       </h1>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <Clock />
+
         <div ref={wrapRef} className="relative flex items-center gap-1">
           {arrow(-1, 'Previous week')}
 

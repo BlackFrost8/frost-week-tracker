@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DayId, SyncState, Task, Week } from '../types';
-import type { WeekStore } from '../lib/storage';
+import { flushPending, type WeekStore } from '../lib/storage';
 import { createWeek, currentWeekStart, uid } from '../lib/week';
 
 const SAVE_DEBOUNCE_MS = 300;
@@ -19,6 +19,16 @@ export function useWeek(store: WeekStore, ready: boolean) {
   const [loading, setLoading] = useState(true);
   const [sync, setSync] = useState<SyncState>('idle');
   const [error, setError] = useState<string | null>(null);
+  /** Bumped to force a re-read — the only way a tab ever sees another device. */
+  const [reloadToken, setReloadToken] = useState(0);
+
+  /**
+   * The calendar week that was current when `weekStart` was last set. It tells
+   * "sitting on this week" apart from "navigated here deliberately", so a tab
+   * left open across Sunday midnight rolls forward instead of quietly writing
+   * every later edit into last week's document.
+   */
+  const anchorRef = useRef(currentWeekStart());
 
   const weekRef = useRef<Week | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,7 +114,7 @@ export function useWeek(store: WeekStore, ready: boolean) {
     return () => {
       active = false;
     };
-  }, [weekStart, ready, store]);
+  }, [weekStart, ready, store, reloadToken]);
 
   useEffect(() => {
     if (!ready) return;
@@ -122,19 +132,54 @@ export function useWeek(store: WeekStore, ready: boolean) {
     };
   }, [ready, store]);
 
-  /* Flush anything pending if the tab is closed or backgrounded mid-edit. */
+  /* ── Leaving and coming back ──────────────────────────────────────────────
+     Hiding flushes pending work. Returning re-reads, which is the entire
+     mechanism by which one device ever sees what another one wrote — there is
+     no realtime subscription, and for two devices that are never used at the
+     same moment there doesn't need to be. Without this, a tab shows whatever
+     it loaded at mount forever, and the next click uploads that stale snapshot
+     over the newer week. */
   useEffect(() => {
     const onHide = () => {
       const pending = pendingRef.current;
+      // Clear both, or a tab frozen inside the 300ms debounce window wakes up
+      // and re-uploads its pre-freeze snapshot over newer work.
+      pendingRef.current = null;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       if (pending) void commit(pending);
     };
+
+    const onShow = () => {
+      // Never clobber an edit that hasn't been written yet.
+      if (pendingRef.current || timerRef.current) return;
+
+      const nowWeek = currentWeekStart();
+      if (nowWeek !== anchorRef.current) {
+        const wasSittingOnCurrent = weekStart === anchorRef.current;
+        anchorRef.current = nowWeek;
+        if (wasSittingOnCurrent) {
+          setWeekStartRaw(nowWeek); // Re-reads via the load effect.
+          return;
+        }
+      }
+
+      void flushPending().finally(() => setReloadToken((n) => n + 1));
+    };
+
+    const onVisibility = () => (document.hidden ? onHide() : onShow());
+
     window.addEventListener('beforeunload', onHide);
-    document.addEventListener('visibilitychange', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onShow);
     return () => {
       window.removeEventListener('beforeunload', onHide);
-      document.removeEventListener('visibilitychange', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onShow);
     };
-  }, [commit]);
+  }, [commit, weekStart]);
 
   /* ── Mutations ────────────────────────────────────────────────────────── */
 

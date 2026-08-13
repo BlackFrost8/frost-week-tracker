@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DayId } from './types';
 import { useAuth, signOut } from './hooks/useAuth';
+import { useClickRipple } from './hooks/useClickRipple';
 import { useWeek } from './hooks/useWeek';
 import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
 import { completedCount, todayISO } from './lib/week';
@@ -14,13 +15,26 @@ import { DayCard } from './components/DayCard';
 import { AccountDialog } from './components/AccountDialog';
 
 export default function App() {
+  useClickRipple();
+
   const { mode, profile } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
   const [migrationNote, setMigrationNote] = useState<string | null>(null);
+  const [migratedUid, setMigratedUid] = useState<string | null>(null);
 
   const signedIn = mode === 'signed-in';
+  const uid = profile?.uid ?? null;
   const store = useMemo(() => (signedIn ? cloudStore : localStore), [signedIn]);
-  const ready = mode !== 'loading';
+
+  /**
+   * Nothing loads until migration for this account has finished. Without the
+   * gate, `useWeek`'s load effect (registered first, because the hook is
+   * called above the migration effect) would read an empty account, build a
+   * blank starter week, and the next click would upload it straight over the
+   * weeks migration had just moved in — while the banner said they'd arrived.
+   */
+  const migrationDone = !signedIn || migratedUid === uid;
+  const ready = mode !== 'loading' && migrationDone;
 
   const {
     week,
@@ -39,7 +53,7 @@ export default function App() {
   } = useWeek(store, ready);
 
   useEffect(() => {
-    if (!signedIn) return;
+    if (!signedIn || !uid || migratedUid === uid) return;
     let active = true;
     migrateLocalToCloud()
       .then((count) => {
@@ -48,11 +62,18 @@ export default function App() {
           setTimeout(() => active && setMigrationNote(null), 6000);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        /* Offline, or the rules aren't published yet. The local copy is
+           untouched and the flag is never set, so the next sign-in retries. */
+      })
+      .finally(() => {
+        // Opens the gate either way: a failed migration must not wedge the app.
+        if (active) setMigratedUid(uid);
+      });
     return () => {
       active = false;
     };
-  }, [signedIn]);
+  }, [signedIn, uid, migratedUid]);
 
   const today = todayISO();
   const todayDay = week?.days.find((d) => d.date === today) ?? null;

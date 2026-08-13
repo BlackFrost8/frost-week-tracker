@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { signInWithGoogle, type Profile } from '../hooks/useAuth';
+import {
+  sendPasswordReset,
+  signIn,
+  signInWithGoogle,
+  signUp,
+  type Profile,
+} from '../hooks/useAuth';
 import { activeProjectId, isCloudConfigured } from '../lib/firebase';
 import { GoogleMark } from './GoogleMark';
 
@@ -10,12 +16,53 @@ type Props = {
   onSignOut: () => void;
 };
 
+/** Firebase throws `auth/…` codes at the UI. Say something a person can act on. */
+function friendlyAuthError(err: unknown): string | null {
+  const code = (err as { code?: string })?.code ?? '';
+  switch (code) {
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return null; // Deliberate cancellation isn't an error worth reporting.
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'That email and password don’t match an account.';
+    case 'auth/email-already-in-use':
+      return 'There’s already an account with that email — sign in instead.';
+    case 'auth/weak-password':
+      return 'Password needs to be at least 6 characters.';
+    case 'auth/invalid-email':
+      return 'That doesn’t look like an email address.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Wait a minute and try again.';
+    case 'auth/network-request-failed':
+      return 'No connection. Your work is saved on this device either way.';
+    case 'auth/popup-blocked':
+      return 'Your browser blocked the Google popup — allow popups, or use email below.';
+    case 'auth/operation-not-allowed':
+      return 'That sign-in method isn’t enabled on this Firebase project yet.';
+    case 'auth/unauthorized-domain':
+      return 'This domain is not authorised in Firebase yet.';
+    default:
+      return err instanceof Error ? err.message : 'Could not sign in.';
+  }
+}
+
 export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [withEmail, setWithEmail] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
-    if (open) setError(null);
+    if (open) {
+      setError(null);
+      setNotice(null);
+      setPassword('');
+    }
   }, [open]);
 
   useEffect(() => {
@@ -33,19 +80,44 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
   const handleGoogle = () => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     signInWithGoogle()
       .then(onClose)
-      .catch((err: unknown) => {
-        const code = (err as { code?: string })?.code ?? '';
-        if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-          setError(null);
-        } else if (code === 'auth/unauthorized-domain') {
-          setError('This domain is not authorised in Firebase yet.');
-        } else {
-          setError(err instanceof Error ? err.message : 'Could not sign in.');
-        }
-      })
+      .catch((err: unknown) => setError(friendlyAuthError(err)))
       .finally(() => setBusy(false));
+  };
+
+  const submitEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (creating) await signUp(emailInput.trim(), password);
+      else await signIn(emailInput.trim(), password);
+      onClose();
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetPassword = async () => {
+    if (!emailInput.trim()) {
+      setError('Enter your email address first.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await sendPasswordReset(emailInput.trim());
+      setNotice('Reset link sent — check your inbox.');
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -107,7 +179,81 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
               {busy ? 'opening google…' : 'continue with google'}
             </button>
 
+            {/* The escape hatch for a managed Chromebook that blocks OAuth
+                popups. Folded away by default so the common path stays one
+                button, not a form. */}
+            {!withEmail && (
+              <button
+                type="button"
+                onClick={() => setWithEmail(true)}
+                className="mt-4 w-full text-sm text-frost-text-faint transition-colors hover:text-frost-text-dim"
+              >
+                use an email and password instead
+              </button>
+            )}
+
+            {withEmail && (
+              <form onSubmit={submitEmail} className="mt-6 flex flex-col gap-4">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-frost-text-faint">email</span>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    required
+                    className="frost-field text-sm"
+                    value={emailInput}
+                    onChange={(ev) => setEmailInput(ev.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-frost-text-faint">password</span>
+                  <input
+                    type="password"
+                    autoComplete={creating ? 'new-password' : 'current-password'}
+                    required
+                    minLength={6}
+                    className="frost-field text-sm"
+                    value={password}
+                    onChange={(ev) => setPassword(ev.target.value)}
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="mt-1 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-frost-cyan-300)', color: '#000000' }}
+                >
+                  {busy ? 'working…' : creating ? 'create account' : 'sign in'}
+                </button>
+
+                <div className="flex items-center justify-between text-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreating(!creating);
+                      setError(null);
+                      setNotice(null);
+                    }}
+                    className="text-frost-text-dim transition-colors hover:text-frost-cyan-300"
+                  >
+                    {creating ? 'i already have one' : 'create an account'}
+                  </button>
+                  {!creating && (
+                    <button
+                      type="button"
+                      onClick={resetPassword}
+                      className="text-frost-text-faint transition-colors hover:text-frost-text-dim"
+                    >
+                      forgot password
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+
             {error && <p className="mt-4 text-sm text-frost-alert">{error}</p>}
+            {notice && <p className="mt-4 text-sm text-frost-cyan-200">{notice}</p>}
 
             <button
               type="button"

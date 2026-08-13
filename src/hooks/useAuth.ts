@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
   type User,
@@ -68,4 +71,27 @@ export async function signInWithGoogle(): Promise<void> {
 export async function signOut(): Promise<void> {
   if (!auth) return;
   await fbSignOut(auth);
+}
+
+/* ── Email fallback ────────────────────────────────────────────────────────
+   Kept deliberately, not as a legacy leftover. A managed school Chromebook
+   can block third-party OAuth consent or popups outright, and if that happens
+   Google sign-in is unrecoverable on the one device where it matters most.
+   Enable Email/Password alongside Google in the Firebase console. */
+
+export async function signIn(email: string, password: string): Promise<void> {
+  if (!auth) throw new Error('Cloud sync is not configured.');
+  await signInWithEmailAndPassword(auth, email, password);
+}
+
+export async function signUp(email: string, password: string): Promise<void> {
+  if (!auth) throw new Error('Cloud sync is not configured.');
+  await createUserWithEmailAndPassword(auth, email, password);
+}
+
+/** Firebase hosts the reset page itself, so this genuinely resets a password —
+    the old Supabase flow sent a magic link that never changed anything. */
+export async function sendPasswordReset(email: string): Promise<void> {
+  if (!auth) throw new Error('Cloud sync is not configured.');
+  await sendPasswordResetEmail(auth, email);
 }
