@@ -84,6 +84,15 @@ export function formatShortDate(iso: string): string {
   return `${d.getDate()}.${d.getMonth() + 1}.${String(d.getFullYear()).slice(2)}`;
 }
 
+/** "2025-05-18" -> "18.5.25". Compact form used in day list rows. */
+export const shortDayDate = formatShortDate;
+
+/** "2025-05-18" -> "18 May". Used in today's card header. */
+export function longDayDate(iso: string): string {
+  const d = fromISODate(iso);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+}
+
 /** "2025-05-18" -> "18 May 2025", used in the week selector. */
 export function formatLongDate(iso: string): string {
   const d = fromISODate(iso);

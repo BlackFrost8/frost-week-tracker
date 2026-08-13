@@ -22,8 +22,6 @@ export function AccountDialog({ open, onClose, email }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  // Connect form (only shown when no Supabase project is configured)
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
 
@@ -45,6 +43,9 @@ export function AccountDialog({ open, onClose, email }: Props) {
 
   if (!open) return null;
 
+  const primaryButton = 'w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150';
+  const primaryStyle = { backgroundColor: 'var(--color-frost-cyan-500)', color: '#000000' };
+
   const submitAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -56,11 +57,8 @@ export function AccountDialog({ open, onClose, email }: Props) {
         onClose();
       } else {
         const { needsConfirm } = await signUp(emailInput.trim(), password);
-        if (needsConfirm) {
-          setNotice('Account created. Check your email for the confirmation link, then sign in.');
-        } else {
-          onClose();
-        }
+        if (needsConfirm) setNotice('Account created. Confirm via the email we sent, then sign in.');
+        else onClose();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
@@ -76,8 +74,6 @@ export function AccountDialog({ open, onClose, email }: Props) {
       return;
     }
     saveRuntimeConfig({ url: url.trim(), anonKey: anonKey.trim() });
-    // The Supabase client is created once at module load, so a reload is the
-    // cleanest way to pick up brand-new credentials.
     window.location.reload();
   };
 
@@ -90,7 +86,7 @@ export function AccountDialog({ open, onClose, email }: Props) {
     setError(null);
     try {
       await sendPasswordReset(emailInput.trim());
-      setNotice('Password reset link sent — check your inbox.');
+      setNotice('Reset link sent — check your inbox.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send reset email.');
     } finally {
@@ -100,220 +96,176 @@ export function AccountDialog({ open, onClose, email }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center p-4"
-      style={{ backgroundColor: 'rgba(2,4,6,0.82)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-50 grid place-items-center p-5"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Account"
     >
       <div
-        className="frost-panel w-full max-w-md p-6"
-        style={{ borderColor: 'rgba(0,229,255,0.28)' }}
+        className="frost-rise w-full max-w-sm rounded-2xl p-7"
+        style={{ backgroundColor: 'var(--color-frost-surface)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Not configured: collect project credentials ───────────────── */}
         {!isCloudConfigured && (
           <>
-            <h2 className="font-display text-sm font-semibold uppercase tracking-[0.22em] text-frost-cyan">
+            <h2 className="font-display text-lg tracking-tight text-frost-text">
               Connect your database
             </h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-frost-text-dim">
-              Right now your weeks are saved to this device only. Paste your Supabase project
-              details to sign in and sync everywhere. See{' '}
-              <span className="font-mono text-frost-cyan/80">README.md</span> for the 5-minute
-              setup.
+            <p className="mt-2 text-sm leading-relaxed text-frost-text-dim">
+              Your weeks are on this device only. Paste your Supabase project details to sync
+              everywhere. Setup steps are in the README.
             </p>
 
-            <form onSubmit={submitConnect} className="mt-5 flex flex-col gap-3">
-              <label className="flex flex-col gap-1.5">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-frost-text-dim">
-                  Project URL
-                </span>
+            <form onSubmit={submitConnect} className="mt-6 flex flex-col gap-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-frost-text-faint">project url</span>
                 <input
-                  className="frost-input px-3 py-2 font-mono text-xs"
+                  className="frost-field font-mono text-xs"
                   placeholder="https://xxxxxxxx.supabase.co"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-frost-text-dim">
-                  Anon public key
-                </span>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-frost-text-faint">anon public key</span>
                 <input
-                  className="frost-input px-3 py-2 font-mono text-xs"
+                  className="frost-field font-mono text-xs"
                   placeholder="eyJhbGciOi…"
                   value={anonKey}
                   onChange={(e) => setAnonKey(e.target.value)}
                 />
               </label>
 
-              {error && <p className="text-xs text-frost-danger">{error}</p>}
+              {error && <p className="text-sm text-frost-text-dim">{error}</p>}
 
-              <div className="mt-1 flex gap-2">
-                <button
-                  type="submit"
-                  className="frost-glow flex-1 rounded-lg px-4 py-2.5 font-display text-[11px] font-semibold uppercase tracking-[0.15em]"
-                  style={{ backgroundColor: 'var(--color-frost-cyan)', color: '#04141a' }}
-                >
-                  Connect
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-lg border px-4 py-2.5 font-display text-[11px] uppercase tracking-[0.15em] text-frost-text-dim"
-                  style={{ borderColor: 'var(--frost-border)' }}
-                >
-                  Later
-                </button>
-              </div>
+              <button type="submit" className={`${primaryButton} mt-1`} style={primaryStyle}>
+                connect
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-sm text-frost-text-faint transition-colors hover:text-frost-text-dim"
+              >
+                later
+              </button>
             </form>
           </>
         )}
 
-        {/* ── Configured + signed out: sign in / sign up ────────────────── */}
         {isCloudConfigured && !email && (
           <>
-            <h2 className="font-display text-sm font-semibold uppercase tracking-[0.22em] text-frost-cyan">
+            <h2 className="font-display text-lg tracking-tight text-frost-text">
               {tab === 'sign-in' ? 'Sign in' : 'Create account'}
             </h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-frost-text-dim">
-              Your weeks sync to your account, so they're on every device you sign in from.
+            <p className="mt-2 text-sm leading-relaxed text-frost-text-dim">
+              Your weeks follow you to any device you sign in from.
             </p>
 
-            <div className="mt-4 flex gap-1 rounded-lg p-1" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
-              {(['sign-in', 'sign-up'] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => {
-                    setTab(t);
-                    setError(null);
-                    setNotice(null);
-                  }}
-                  className="flex-1 rounded-md px-3 py-1.5 font-display text-[10px] uppercase tracking-[0.15em] transition-colors"
-                  style={
-                    tab === t
-                      ? { backgroundColor: 'rgba(0,229,255,0.14)', color: 'var(--color-frost-cyan-bright)' }
-                      : { color: 'var(--color-frost-text-dim)' }
-                  }
-                >
-                  {t === 'sign-in' ? 'Sign in' : 'Sign up'}
-                </button>
-              ))}
-            </div>
-
-            <form onSubmit={submitAuth} className="mt-4 flex flex-col gap-3">
-              <label className="flex flex-col gap-1.5">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-frost-text-dim">
-                  Email
-                </span>
+            <form onSubmit={submitAuth} className="mt-6 flex flex-col gap-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-frost-text-faint">email</span>
                 <input
                   type="email"
                   autoComplete="email"
                   required
-                  className="frost-input px-3 py-2 text-sm"
+                  className="frost-field text-sm"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-frost-text-dim">
-                  Password
-                </span>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-frost-text-faint">password</span>
                 <input
                   type="password"
                   autoComplete={tab === 'sign-in' ? 'current-password' : 'new-password'}
                   required
                   minLength={6}
-                  className="frost-input px-3 py-2 text-sm"
+                  className="frost-field text-sm"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
 
-              {error && <p className="text-xs text-frost-danger">{error}</p>}
-              {notice && <p className="text-xs text-frost-cyan-bright">{notice}</p>}
+              {error && <p className="text-sm text-frost-text-dim">{error}</p>}
+              {notice && <p className="text-sm text-frost-cyan-300">{notice}</p>}
 
               <button
                 type="submit"
                 disabled={busy}
-                className="frost-glow mt-1 rounded-lg px-4 py-2.5 font-display text-[11px] font-semibold uppercase tracking-[0.15em] disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-frost-cyan)', color: '#04141a' }}
+                className={`${primaryButton} mt-1 disabled:opacity-50`}
+                style={primaryStyle}
               >
-                {busy ? 'Working…' : tab === 'sign-in' ? 'Sign in' : 'Create account'}
+                {busy ? 'working…' : tab === 'sign-in' ? 'sign in' : 'create account'}
               </button>
 
-              <div className="flex items-center justify-between">
-                {tab === 'sign-in' ? (
+              <div className="flex items-center justify-between text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab(tab === 'sign-in' ? 'sign-up' : 'sign-in');
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  className="text-frost-text-dim transition-colors hover:text-frost-cyan-300"
+                >
+                  {tab === 'sign-in' ? 'create an account' : 'i already have one'}
+                </button>
+                {tab === 'sign-in' && (
                   <button
                     type="button"
                     onClick={resetPassword}
-                    className="text-[11px] text-frost-text-dim underline-offset-2 hover:text-frost-cyan hover:underline"
+                    className="text-frost-text-faint transition-colors hover:text-frost-text-dim"
                   >
-                    Forgot password?
+                    forgot password
                   </button>
-                ) : (
-                  <span />
                 )}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="text-[11px] text-frost-text-dim underline-offset-2 hover:text-frost-cyan hover:underline"
-                >
-                  Keep using this device only
-                </button>
               </div>
             </form>
           </>
         )}
 
-        {/* ── Signed in ─────────────────────────────────────────────────── */}
         {isCloudConfigured && email && (
           <>
-            <h2 className="font-display text-sm font-semibold uppercase tracking-[0.22em] text-frost-cyan">
-              Account
-            </h2>
-            <dl className="mt-4 flex flex-col gap-3 text-[13px]">
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-frost-text-dim">Signed in as</dt>
+            <h2 className="font-display text-lg tracking-tight text-frost-text">Account</h2>
+            <dl className="mt-5 flex flex-col gap-3 text-sm">
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-frost-text-faint">signed in as</dt>
                 <dd className="truncate font-mono text-frost-text">{email}</dd>
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-frost-text-dim">Data</dt>
-                <dd className="font-mono text-frost-cyan-bright">Synced to your account</dd>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-frost-text-faint">data</dt>
+                <dd className="font-mono text-frost-cyan-300">synced</dd>
               </div>
               {activeProjectUrl && (
-                <div className="flex items-center justify-between gap-4">
-                  <dt className="text-frost-text-dim">Project</dt>
-                  <dd className="truncate font-mono text-[11px] text-frost-text-dim">
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-frost-text-faint">project</dt>
+                  <dd className="truncate font-mono text-xs text-frost-text-dim">
                     {activeProjectUrl.replace('https://', '')}
                   </dd>
                 </div>
               )}
             </dl>
 
-            <div className="mt-6 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="frost-glow rounded-lg px-4 py-2.5 font-display text-[11px] font-semibold uppercase tracking-[0.15em]"
-                style={{ backgroundColor: 'var(--color-frost-cyan)', color: '#04141a' }}
-              >
-                Done
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  clearRuntimeConfig();
-                  window.location.reload();
-                }}
-                className="text-[11px] text-frost-text-dim underline-offset-2 hover:text-frost-danger hover:underline"
-              >
-                Disconnect this database from this device
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className={`${primaryButton} mt-7`}
+              style={primaryStyle}
+            >
+              done
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearRuntimeConfig();
+                window.location.reload();
+              }}
+              className="mt-4 w-full text-sm text-frost-text-faint transition-colors hover:text-frost-text-dim"
+            >
+              disconnect this database
+            </button>
           </>
         )}
       </div>

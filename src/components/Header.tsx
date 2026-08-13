@@ -1,42 +1,25 @@
-import type { StorageKind, SyncState } from '../types';
-import { addDays, currentWeekStart, formatLongDate } from '../lib/week';
+import { useEffect, useRef, useState } from 'react';
+import type { SyncState } from '../types';
+import { addDays, currentWeekStart, fromISODate, formatLongDate } from '../lib/week';
 
 type Props = {
   weekStart: string;
   knownWeeks: string[];
   onGoToWeek: (weekStart: string) => void;
   sync: SyncState;
-  storageKind: StorageKind;
   email: string | null;
   onSignOut: () => void;
   onOpenAccount: () => void;
 };
 
-function SyncBadge({ sync, storageKind }: { sync: SyncState; storageKind: StorageKind }) {
-  const cloud = storageKind === 'cloud';
-
-  const { text, color } =
-    sync === 'saving'
-      ? { text: 'Saving', color: 'var(--color-frost-cyan)' }
-      : sync === 'error'
-        ? { text: 'Save failed', color: 'var(--color-frost-danger)' }
-        : sync === 'saved'
-          ? { text: cloud ? 'Synced' : 'Saved', color: 'var(--color-frost-cyan-bright)' }
-          : { text: cloud ? 'Cloud' : 'This device', color: 'var(--color-frost-text-dim)' };
-
-  return (
-    <span
-      className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.15em]"
-      style={{ color }}
-      role="status"
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${sync === 'saving' ? 'frost-pulse' : ''}`}
-        style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
-      />
-      {text}
-    </span>
-  );
+/** "2026-08-10" -> "10 – 16 August" (or "28 July – 3 August" across a boundary). */
+function weekRange(weekStart: string): string {
+  const a = fromISODate(weekStart);
+  const b = fromISODate(addDays(weekStart, 6));
+  const month = (d: Date) => d.toLocaleDateString(undefined, { month: 'long' });
+  return a.getMonth() === b.getMonth()
+    ? `${a.getDate()} – ${b.getDate()} ${month(b)}`
+    : `${a.getDate()} ${month(a)} – ${b.getDate()} ${month(b)}`;
 }
 
 export function Header({
@@ -44,103 +27,122 @@ export function Header({
   knownWeeks,
   onGoToWeek,
   sync,
-  storageKind,
   email,
   onSignOut,
   onOpenAccount,
 }: Props) {
   const thisWeek = currentWeekStart();
-  // Always offer the current week plus everything already saved.
-  const options = Array.from(new Set([thisWeek, weekStart, ...knownWeeks])).sort().reverse();
+  const [listOpen, setListOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!listOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setListOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setListOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [listOpen]);
+
+  const weeks = Array.from(new Set([thisWeek, weekStart, ...knownWeeks])).sort().reverse();
+
+  const arrow = (dir: -1 | 1, label: string) => (
+    <button
+      type="button"
+      onClick={() => onGoToWeek(addDays(weekStart, dir * 7))}
+      aria-label={label}
+      className="grid h-7 w-7 place-items-center rounded text-frost-text-faint transition-colors duration-150 hover:text-frost-text"
+    >
+      <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
+        <path
+          d={dir === -1 ? 'M7.5 1.5 3 6l4.5 4.5' : 'M4.5 1.5 9 6l-4.5 4.5'}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
 
   return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex items-baseline gap-3">
-        <h1 className="font-display text-base font-semibold uppercase tracking-[0.3em] text-frost-cyan frost-glow-text sm:text-lg">
-          Frost
-        </h1>
-        <span className="font-display text-[11px] uppercase tracking-[0.28em] text-frost-text-dim">
-          // Week Tracker
-        </span>
-      </div>
+    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+      {/* The one uppercase, wide-tracked element in the app (§2.3). */}
+      <h1 className="font-display text-base font-medium uppercase tracking-[0.42em] text-frost-text">
+        Frost
+      </h1>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <SyncBadge sync={sync} storageKind={storageKind} />
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div ref={wrapRef} className="relative flex items-center gap-1">
+          {arrow(-1, 'Previous week')}
 
-        <div className="mx-1 hidden h-5 w-px bg-frost-cyan/15 sm:block" />
+          <button
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            aria-expanded={listOpen}
+            aria-haspopup="listbox"
+            className="min-w-[9.5rem] px-1 text-center font-mono text-sm text-frost-text transition-colors duration-150 hover:text-frost-cyan-300"
+          >
+            {weekRange(weekStart)}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onGoToWeek(addDays(weekStart, -7))}
-          aria-label="Previous week"
-          className="grid h-8 w-8 place-items-center rounded-lg border text-frost-text-dim transition-colors hover:border-frost-cyan/40 hover:text-frost-cyan"
-          style={{ borderColor: 'var(--frost-border)' }}
-        >
-          <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
-            <path
-              d="M7.5 1.5 3 6l4.5 4.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+          {arrow(1, 'Next week')}
 
-        <select
-          className="frost-input frost-select cursor-pointer px-3 py-1.5 font-mono text-xs"
-          value={weekStart}
-          onChange={(e) => onGoToWeek(e.target.value)}
-          aria-label="Select week"
-        >
-          {options.map((ws) => (
-            <option key={ws} value={ws}>
-              {formatLongDate(ws)}
-              {ws === thisWeek ? '  •  this week' : ''}
-            </option>
-          ))}
-        </select>
-
-        <button
-          type="button"
-          onClick={() => onGoToWeek(addDays(weekStart, 7))}
-          aria-label="Next week"
-          className="grid h-8 w-8 place-items-center rounded-lg border text-frost-text-dim transition-colors hover:border-frost-cyan/40 hover:text-frost-cyan"
-          style={{ borderColor: 'var(--frost-border)' }}
-        >
-          <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
-            <path
-              d="M4.5 1.5 9 6l-4.5 4.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+          {listOpen && (
+            <div
+              role="listbox"
+              className="frost-rise absolute top-full left-1/2 z-30 mt-2 max-h-72 w-56 -translate-x-1/2 overflow-y-auto rounded-xl p-1.5"
+              style={{ backgroundColor: 'var(--color-frost-surface-2)' }}
+            >
+              {weeks.map((ws) => (
+                <button
+                  key={ws}
+                  role="option"
+                  aria-selected={ws === weekStart}
+                  onClick={() => {
+                    onGoToWeek(ws);
+                    setListOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-mono text-xs transition-colors duration-150 hover:bg-white/5"
+                  style={{ color: ws === weekStart ? 'var(--color-frost-cyan-300)' : 'var(--color-frost-text-dim)' }}
+                >
+                  <span>{formatLongDate(ws)}</span>
+                  {ws === thisWeek && <span className="text-frost-text-faint">now</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {weekStart !== thisWeek && (
           <button
             type="button"
             onClick={() => onGoToWeek(thisWeek)}
-            className="rounded-lg border px-3 py-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-frost-text-dim transition-colors hover:border-frost-cyan/40 hover:text-frost-cyan"
-            style={{ borderColor: 'var(--frost-border)' }}
+            className="text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-text-dim"
           >
-            Today
+            today
           </button>
         )}
 
-        <div className="mx-1 hidden h-5 w-px bg-frost-cyan/15 sm:block" />
+        {/* Sync is a real feature, so it gets a real (tiny) affordance — and
+            says nothing at all when there is nothing to report (§2.4). */}
+        {sync === 'saving' && <span className="font-mono text-xs text-frost-text-faint">saving</span>}
+        {sync === 'error' && <span className="font-mono text-xs text-frost-cyan-700">save failed</span>}
 
         {email ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={onOpenAccount}
-              className="max-w-[160px] truncate rounded-lg border px-3 py-1.5 font-mono text-[11px] text-frost-text-dim transition-colors hover:border-frost-cyan/40 hover:text-frost-cyan"
-              style={{ borderColor: 'var(--frost-border)' }}
+              className="max-w-[13rem] truncate text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-text"
               title={email}
             >
               {email}
@@ -148,20 +150,18 @@ export function Header({
             <button
               type="button"
               onClick={onSignOut}
-              className="rounded-lg border px-3 py-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-frost-text-dim transition-colors hover:border-frost-danger/50 hover:text-frost-danger"
-              style={{ borderColor: 'var(--frost-border)' }}
+              className="text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-text-dim"
             >
-              Sign out
+              sign out
             </button>
           </div>
         ) : (
           <button
             type="button"
             onClick={onOpenAccount}
-            className="rounded-lg border px-3 py-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-frost-cyan transition-colors hover:border-frost-cyan/50"
-            style={{ borderColor: 'rgba(0,229,255,0.28)' }}
+            className="text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-cyan-300"
           >
-            Sync across devices
+            sync devices
           </button>
         )}
       </div>
