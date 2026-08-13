@@ -151,7 +151,7 @@ src/
 │   └── useClickRipple.ts  Capture-phase click bloom, own layer, JS-gated
 └── components/
     ├── AmbientBackground  Fixed black canvas, cyan wash, 110 drifting motes
-    ├── Clock              Wall clock + two-mode timer, lives in the Header
+    ├── Clock              Wall clock + two-mode timer + portalled focus view
     ├── WeekStrip          The 7 days, horizontal. Selects; does not expand
     ├── DayCard            The focal card — shows whichever day is selected
     ├── HeroPanel          The signature element — owns the only looping glow
@@ -274,6 +274,18 @@ Don't "fix" these without reading why.
     cannot be persisted.
 18. **Timer state is device-local and never synced.** A timer is about the room
     you're in; syncing it would mean pausing at home stops a run at school.
+19. **A single click on the countdown digits is delayed 220ms; on the stopwatch
+    it is not.** Double-clicking to edit the length also fires two ordinary
+    clicks, which would start and immediately pause the countdown on the way
+    past. The delay is the guard, and it only applies where double-click means
+    something — the stopwatch has no duration to edit, so it toggles instantly.
+20. **The focus view's numerals are off the type scale, deliberately.** The
+    scale tops out at 56px, and `clamp(64px, 15vw, 200px)` is well past it.
+    This is a single-purpose surface with nothing else on screen — a scale
+    exists to keep a *composition* coherent, and there is no composition here
+    to violate. It costs the standing count nothing either way: the overlay is
+    portalled and unmounted when closed, so a guard run at rest sees exactly
+    the same five sizes as before. Don't extend the shared scale to cover it.
 
 ---
 

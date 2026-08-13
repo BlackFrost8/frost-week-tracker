@@ -16,6 +16,7 @@ export type ClockMode = 'stopwatch' | 'countdown';
 const KEY = 'frost-week-tracker:clock:v1';
 const TICK_MS = 250;
 const DEFAULT_DURATION_MS = 5 * 60_000;
+const MAX_DURATION_MS = 24 * 3600_000;
 
 type Persisted = {
   mode: ClockMode;
@@ -137,7 +138,20 @@ export function useClock() {
     setFinished(false);
     setState((s) => ({
       ...s,
-      durationMs: Math.min(24 * 3600_000, Math.max(60_000, s.durationMs + minutes * 60_000)),
+      durationMs: Math.min(MAX_DURATION_MS, Math.max(60_000, s.durationMs + minutes * 60_000)),
+      accumulatedMs: 0,
+      running: false,
+      startedAt: null,
+    }));
+  }, []);
+
+  /** Typed straight in, so a 45-minute countdown isn't 45 clicks. Floor is one
+      second rather than one minute — "0:30" is a reasonable thing to want. */
+  const setDuration = useCallback((ms: number) => {
+    setFinished(false);
+    setState((s) => ({
+      ...s,
+      durationMs: Math.min(MAX_DURATION_MS, Math.max(1000, Math.round(ms))),
       accumulatedMs: 0,
       running: false,
       startedAt: null,
@@ -155,7 +169,27 @@ export function useClock() {
     reset,
     setMode,
     addMinutes,
+    setDuration,
   };
+}
+
+/**
+ * Accepts what a person would actually type: `30` (minutes), `5:30` (m:ss),
+ * `1:02:30` (h:mm:ss). Returns null for anything it can't read, so the caller
+ * can leave the old value alone rather than guessing.
+ */
+export function parseDurationInput(text: string): number | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (/^\d+$/.test(t)) return Number(t) * 60_000;
+
+  const parts = t.split(':');
+  if (!parts.every((p) => /^\d+$/.test(p))) return null;
+  if (parts.length === 2) return (Number(parts[0]) * 60 + Number(parts[1])) * 1000;
+  if (parts.length === 3) {
+    return (Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2])) * 1000;
+  }
+  return null;
 }
 
 /** `07:42`, or `1:02:30` once an hour is on the board. */
