@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { PRESETS } from '../lib/theme';
-import { useTheme } from '../hooks/useTheme';
+import { MAX_THEME_NAME, PRESETS } from '../lib/theme';
+import type { useTheme } from '../hooks/useTheme';
 
-type Props = { open: boolean; onClose: () => void };
+/** The hook lives in App, not here: the wordmark in the header renders the
+    theme's name, so both need the same instance of that state. */
+type Props = { open: boolean; onClose: () => void; theme: ReturnType<typeof useTheme> };
 
 /** Primary as the field, accent as the mark on it — the same relationship the
     theme itself has, so the swatch previews the idea and not just two colours. */
@@ -21,8 +23,8 @@ function Swatch({ primary, accent, active }: { primary: string; accent: string; 
   );
 }
 
-export function ThemeDialog({ open, onClose }: Props) {
-  const { presetId, spec, selectPreset, setCustom, reset } = useTheme();
+export function ThemeDialog({ open, onClose, theme }: Props) {
+  const { presetId, name, spec, selectPreset, setCustom, setName, reset } = theme;
   const [advanced, setAdvanced] = useState(false);
 
   useEffect(() => {
@@ -127,9 +129,23 @@ export function ThemeDialog({ open, onClose }: Props) {
           <div className="mt-5 flex flex-col gap-4">
             {colourField('primary', spec.primary, (primary) => setCustom({ primary }))}
             {colourField('accent', spec.accent, (accent) => setCustom({ accent }))}
+
+            <label className="flex items-center justify-between gap-4">
+              <span className="text-sm text-frost-text-dim">name</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={MAX_THEME_NAME}
+                placeholder="Frost"
+                aria-label="Theme name — becomes the wordmark"
+                className="frost-field w-[14ch] text-right text-sm"
+              />
+            </label>
+
             <p className="text-xs leading-relaxed text-frost-text-faint">
-              Surfaces, text tiers and the accent ramp are all derived from these two, so a light
-              primary flips the whole app to dark text on its own.
+              Surfaces, text tiers and the accent ramp are all derived from those two colours, so a
+              light primary flips the whole app to dark text on its own. The name replaces the
+              wordmark in the corner.
             </p>
           </div>
         )}

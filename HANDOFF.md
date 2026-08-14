@@ -430,6 +430,20 @@ row above while being unreadable and colourless. Treat it as a guard against
 The 16 borders are 5 checkbox squares + 8 hairline dividers + 3 input underlines —
 **zero boxes around content**. That's the property to protect, more than the number.
 
+27. **`StandingTasks` has no effect syncing `draft` back from its `tasks` prop,
+    and must not grow one.** It had one, and it was a bug: `onSave` strips
+    blank rows before persisting, so 600ms after pressing "add a standing
+    task" the round-trip deleted the empty row you were about to type into.
+    The dialog unmounts the component when it closes, so initialising state
+    from the prop is the only sync required.
+28. **`uppercase` lives on the wordmark's `<button>`, not its `<h1>`.** A
+    button does not inherit `text-transform`, so on the h1 it silently did
+    nothing and the mark rendered as "Frost". Keeping it on exactly one
+    element also keeps the §6 uppercase count at 1 — don't put it on both.
+29. **Michroma is loaded for the wordmark alone.** One weight, no italic,
+    which is fine for five letters. Space Grotesk is the fallback so a blocked
+    font CDN — plausible on a school network — degrades to the previous look
+    rather than to Times.
 ---
 
 ## 7. Testing traps in this environment

@@ -16,6 +16,7 @@ type Props = {
   onSignOut: () => void;
   defaultTasks: string[];
   onSaveDefaultTasks: (tasks: string[]) => void;
+  onApplyToWeek: (tasks: string[]) => void;
 };
 
 /**
@@ -28,19 +29,23 @@ type Props = {
 function StandingTasks({
   tasks,
   onSave,
+  onApplyToWeek,
 }: {
   tasks: string[];
   onSave: (tasks: string[]) => void;
+  onApplyToWeek: (tasks: string[]) => void;
 }) {
   const [draft, setDraft] = useState<string[]>(tasks);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
+  const [applied, setApplied] = useState(false);
 
-  // Adopt external changes (a sync from another device) only while idle, so a
-  // late-arriving load can't overwrite something being typed right now.
-  useEffect(() => {
-    if (!timer.current) setDraft(tasks);
-  }, [tasks]);
+  /* There is deliberately NO effect syncing `draft` back from `tasks`.
+     `onSave` strips blank rows before persisting, so a "sync from props" step
+     would fire 600ms after you pressed "add a standing task" and delete the
+     empty row you were about to type into — which is exactly what it did.
+     The dialog unmounts this component when it closes, so the initial state
+     above is the only sync that's needed. */
 
   useEffect(() => {
     if (!mounted.current) {
@@ -99,15 +104,35 @@ function StandingTasks({
         ))}
       </div>
 
-      {draft.length < 20 && (
-        <button
-          type="button"
-          onClick={() => setDraft((d) => [...d, ''])}
-          className="mt-3 text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
-        >
-          + add a standing task
-        </button>
-      )}
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+        {draft.length < 20 && (
+          <button
+            type="button"
+            onClick={() => setDraft((d) => [...d, ''])}
+            className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
+          >
+            + add a standing task
+          </button>
+        )}
+
+        {/* New weeks pick these up on their own. This is for the week you're
+            already in, which is deliberately never rewritten behind your back —
+            so applying it is an explicit act, and it only ever adds what's
+            missing. Nothing is renamed, reordered or removed. */}
+        {draft.some((t) => t.trim()) && (
+          <button
+            type="button"
+            onClick={() => {
+              onApplyToWeek(draft.map((t) => t.trim()).filter(Boolean));
+              setApplied(true);
+              setTimeout(() => setApplied(false), 2500);
+            }}
+            className="text-sm text-frost-text-faint transition-colors hover:text-frost-cyan-300"
+          >
+            {applied ? 'added to this week' : 'add these to this week'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -151,6 +176,7 @@ export function AccountDialog({
   onSignOut,
   defaultTasks,
   onSaveDefaultTasks,
+  onApplyToWeek,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -255,7 +281,11 @@ export function AccountDialog({
             </p>
 
             <span className="frost-divider mt-7 block" />
-            <StandingTasks tasks={defaultTasks} onSave={onSaveDefaultTasks} />
+            <StandingTasks
+              tasks={defaultTasks}
+              onSave={onSaveDefaultTasks}
+              onApplyToWeek={onApplyToWeek}
+            />
 
             <button
               type="button"
@@ -403,7 +433,11 @@ export function AccountDialog({
             </dl>
 
             <span className="frost-divider mt-7 block" />
-            <StandingTasks tasks={defaultTasks} onSave={onSaveDefaultTasks} />
+            <StandingTasks
+              tasks={defaultTasks}
+              onSave={onSaveDefaultTasks}
+              onApplyToWeek={onApplyToWeek}
+            />
 
             <button
               type="button"

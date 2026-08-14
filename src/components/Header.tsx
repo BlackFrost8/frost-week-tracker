@@ -13,6 +13,7 @@ type Props = {
   profile: Profile | null;
   onOpenAccount: () => void;
   onOpenTheme: () => void;
+  wordmark: string;
 };
 
 /** "2026-08-10" -> "10 – 16 August" (or "28 July – 3 August" across a boundary). */
@@ -33,6 +34,7 @@ export function Header({
   profile,
   onOpenAccount,
   onOpenTheme,
+  wordmark,
 }: Props) {
   const thisWeek = currentWeekStart();
   const [listOpen, setListOpen] = useState(false);
@@ -82,15 +84,22 @@ export function Header({
           the theme control — the wordmark is the app's identity, so putting
           "change how this looks" behind it needs no extra chrome in a header
           that is deliberately sparse. */}
-      <h1 className="font-display text-base font-medium uppercase tracking-[0.42em] text-frost-text">
+      {/* `uppercase` sits on the button, not the h1: a button does not inherit
+          text-transform, so on the h1 it silently did nothing. Keeping it on
+          exactly one element also keeps the §6 uppercase count at 1. */}
+      <h1 className="font-wordmark text-base text-frost-text">
         <button
           type="button"
           onClick={onOpenTheme}
-          className="transition-colors duration-150 hover:text-frost-cyan-200"
+          className="uppercase transition-colors duration-150 hover:text-frost-cyan-200"
           aria-haspopup="dialog"
           title="Change the theme"
+          // Michroma is already a wide face, so the old 0.42em would push a
+          // five-letter mark halfway across the header. Longer custom names
+          // tighten further rather than wrapping.
+          style={{ letterSpacing: wordmark.length > 8 ? '0.16em' : '0.28em' }}
         >
-          Frost
+          {wordmark}
         </button>
       </h1>
 

@@ -45,6 +45,12 @@
   --text-2xl: 32px;
   --text-5xl: 56px;
 
+  /* The wordmark only. Michroma is a wide geometric monoline that reads as
+     engineered rather than decorative — it earns the one uppercase slot in the
+     app. It has a single weight and no italic, which is fine for five letters
+     and keeps the extra font request small. Space Grotesk is the fallback, so
+     a blocked font CDN degrades to the previous look rather than to Times. */
+  --font-wordmark: 'Michroma', 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;

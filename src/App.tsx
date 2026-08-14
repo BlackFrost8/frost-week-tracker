@@ -3,6 +3,7 @@ import type { DayId } from './types';
 import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
 import { usePrefs } from './hooks/usePrefs';
+import { useTheme } from './hooks/useTheme';
 import { useWeek } from './hooks/useWeek';
 import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
 import { completedCount, todayISO } from './lib/week';
@@ -18,6 +19,10 @@ import { ThemeDialog } from './components/ThemeDialog';
 
 export default function App() {
   useClickRipple();
+
+  // Lifted out of ThemeDialog: the header's wordmark renders the theme's
+  // name, so both need the same instance of that state.
+  const theme = useTheme();
 
   const { mode, profile } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -57,6 +62,7 @@ export default function App() {
     removeTask,
     setMeta,
     clearChecks,
+    applyStandingTasks,
     flush,
   } = useWeek(store, ready, prefs.defaultTasks);
 
@@ -141,6 +147,7 @@ export default function App() {
           profile={profile}
           onOpenAccount={() => setAccountOpen(true)}
           onOpenTheme={() => setThemeOpen(true)}
+          wordmark={theme.name}
         />
 
         {(error || migrationNote) && (
@@ -208,9 +215,10 @@ export default function App() {
         onSignOut={handleSignOut}
         defaultTasks={prefs.defaultTasks}
         onSaveDefaultTasks={updateDefaultTasks}
+        onApplyToWeek={applyStandingTasks}
       />
 
-      <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} />
+      <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} />
     </>
   );
 }

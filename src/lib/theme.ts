@@ -184,22 +184,35 @@ export function applyTheme(spec: ThemeSpec): void {
 
 const KEY = 'frost-week-tracker:theme:v1';
 
-export type StoredTheme = { presetId: string | null; spec: ThemeSpec };
+/** The name is also the wordmark: naming your own theme renames the app. */
+export type StoredTheme = { presetId: string | null; name: string; spec: ThemeSpec };
+
+export const MAX_THEME_NAME = 18;
+
+const DEFAULT_STORED: StoredTheme = {
+  presetId: DEFAULT_PRESET_ID,
+  name: PRESETS[0].name,
+  spec: DEFAULT_SPEC,
+};
 
 export function loadTheme(): StoredTheme {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { presetId: DEFAULT_PRESET_ID, spec: DEFAULT_SPEC };
+    if (!raw) return DEFAULT_STORED;
     const parsed = JSON.parse(raw) as Partial<StoredTheme>;
     const primary = parsed.spec?.primary;
     const accent = parsed.spec?.accent;
     if (typeof primary === 'string' && typeof accent === 'string') {
-      return { presetId: parsed.presetId ?? null, spec: { primary, accent } };
+      const name =
+        typeof parsed.name === 'string' && parsed.name.trim()
+          ? parsed.name.trim().slice(0, MAX_THEME_NAME)
+          : DEFAULT_STORED.name;
+      return { presetId: parsed.presetId ?? null, name, spec: { primary, accent } };
     }
   } catch {
     /* Fall through to the default. */
   }
-  return { presetId: DEFAULT_PRESET_ID, spec: DEFAULT_SPEC };
+  return DEFAULT_STORED;
 }
 
 export function saveTheme(stored: StoredTheme): void {

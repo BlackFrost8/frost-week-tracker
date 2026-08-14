@@ -254,6 +254,28 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: string[]
     [mutate],
   );
 
+  /**
+   * Adds the standing tasks to every day of the week currently open, skipping
+   * any a day already has. Purely additive and explicitly invoked — a new week
+   * seeds itself, but a week already in progress is never rewritten without
+   * being asked.
+   */
+  const applyStandingTasks = useCallback(
+    (labels: string[]) =>
+      mutate((w) => ({
+        ...w,
+        days: w.days.map((day) => {
+          const have = new Set(day.tasks.map((t) => t.label.trim().toLowerCase()));
+          const missing = labels
+            .map((l) => l.trim())
+            .filter((l) => l && !have.has(l.toLowerCase()))
+            .map((label) => ({ id: uid(), label, done: false }));
+          return missing.length ? { ...day, tasks: [...day.tasks, ...missing] } : day;
+        }),
+      })),
+    [mutate],
+  );
+
   /** Clears every checkmark for the week. Task text is preserved (spec §7). */
   const clearChecks = useCallback(
     () =>
@@ -292,6 +314,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: string[]
     removeTask,
     setMeta,
     clearChecks,
+    applyStandingTasks,
     flush,
   };
 }
