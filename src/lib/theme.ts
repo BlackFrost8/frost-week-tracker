@@ -222,8 +222,3 @@ export function saveTheme(stored: StoredTheme): void {
     /* Private mode — the theme just won't survive a reload. */
   }
 }
-
-/** Called before React mounts so the first paint is already the right colour. */
-export function applyStoredTheme(): void {
-  applyTheme(loadTheme().spec);
-}
