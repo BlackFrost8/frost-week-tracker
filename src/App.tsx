@@ -7,7 +7,7 @@ import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek } from './hooks/useWeek';
 import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
-import { completedCount, todayISO } from './lib/week';
+import { DAY_IDS, completedCount, todayISO } from './lib/week';
 import { AmbientBackground } from './components/AmbientBackground';
 import { Header } from './components/Header';
 import { IntentPanel } from './components/IntentPanel';
@@ -16,6 +16,7 @@ import { PaceCurve } from './components/PaceCurve';
 import { WeekStrip } from './components/WeekStrip';
 import { DayCard } from './components/DayCard';
 import { AccountDialog } from './components/AccountDialog';
+import { InfoDialog } from './components/InfoDialog';
 import { ThemeDialog } from './components/ThemeDialog';
 
 export default function App() {
@@ -102,12 +103,26 @@ export default function App() {
   const today = todayISO();
   const todayDay = week?.days.find((d) => d.date === today) ?? null;
 
-  // The strip selects; the card shows. On a week that doesn't contain today
-  // there is still always a focal card — Monday is simply what's selected.
-  const [selected, setSelected] = useState<DayId>('mon');
+  /**
+   * The strip selects; the card shows. On a week that doesn't contain today
+   * there is still always a focal card — Monday is simply what's selected.
+   *
+   * Seeded to the current weekday rather than to Monday. The first week shown
+   * is always the current one, so starting on Monday meant rendering the wrong
+   * card and correcting it in the effect below one frame later. That was
+   * visible as a flash, and the empty-day prompts made it costly: Monday
+   * claimed three prompts, today claimed three more, and the first three were
+   * marked as seen without anybody having seen them.
+   */
+  const [selected, setSelected] = useState<DayId>(() => DAY_IDS[(new Date().getDay() + 6) % 7]);
   useEffect(() => {
+    // Not while the week is still loading. `todayDay` is null until it lands,
+    // so an unguarded run reads that as "this week has no today" and falls
+    // back to Monday — overwriting the correct seed above, and then correcting
+    // itself once the week arrives. The card in between is a real render.
+    if (!week) return;
     setSelected(todayDay ? todayDay.id : 'mon');
-  }, [weekStart, todayDay]);
+  }, [week, weekStart, todayDay]);
 
   const handleSignOut = async () => {
     await flush();
@@ -138,7 +153,7 @@ export default function App() {
     onLabelChange: (taskId: string, label: string) =>
       setTaskLabel(selectedDay.id, taskId, label),
     onDelete: (taskId: string) => removeTask(selectedDay.id, taskId),
-    onAdd: () => addTask(selectedDay.id),
+    onAdd: (label?: string) => addTask(selectedDay.id, label),
   };
 
   return (
@@ -230,6 +245,10 @@ export default function App() {
       />
 
       <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} />
+
+      {/* Owns its own open state — nothing else in the app needs to know, and
+          the button is part of the feature rather than a separate control. */}
+      <InfoDialog />
     </>
   );
 }

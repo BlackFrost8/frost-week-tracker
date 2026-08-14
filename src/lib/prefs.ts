@@ -45,14 +45,10 @@ export const EMPTY_PREFS: Prefs = { defaultTasks: [], avatar: null };
 
 const everyDay = (): DayId[] => [...DAY_IDS];
 
-/** What a brand-new user gets, so a first week never looks broken or empty. */
-export const STARTER_DEFAULTS: StandingTask[] = [
-  'Wake up at 6:00',
-  'Gym',
-  'Read 10 pages',
-  'Drink 2L of water',
-  'Cook a healthy meal',
-].map((label) => ({ label, days: everyDay() }));
+/* There is deliberately no starter list. A routine you didn't choose is
+   someone else's routine, and five tasks you have to delete before you can
+   begin are worse than a blank card. An empty day offers greyed prompts
+   instead (`lib/suggestions.ts`) — nothing is saved until one is clicked. */
 
 const ANON_KEY = 'frost-week-tracker:prefs';
 const localKey = (uid: string | null) => (uid ? `frost-week-tracker:prefs:${uid}` : ANON_KEY);

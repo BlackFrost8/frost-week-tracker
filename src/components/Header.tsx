@@ -81,7 +81,12 @@ export function Header({
   );
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+    /* On a phone the header stacks and centres. Flex-wrap alone left the
+       wordmark hard against the left edge with a ragged cluster falling under
+       it — each row ending wherever it happened to run out of width, which is
+       what read as disorganised. Below `sm` it is a centred column; from `sm`
+       up there is room for the original mark-left / controls-right split. */
+    <header className="flex flex-col items-center gap-y-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-6 sm:gap-y-4">
       {/* The one uppercase, wide-tracked element in the app (§2.3). It is also
           the theme control — the wordmark is the app's identity, so putting
           "change how this looks" behind it needs no extra chrome in a header
@@ -105,7 +110,9 @@ export function Header({
         </button>
       </h1>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {/* Centred while stacked so each wrapped row is balanced about the same
+          axis as the wordmark above it, rather than ragged against the left. */}
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 sm:justify-end sm:gap-y-2">
         <Clock />
 
         <div ref={wrapRef} className="relative flex items-center gap-1">
@@ -159,11 +166,14 @@ export function Header({
           </button>
         )}
 
-        {/* Sync is a real feature, so it gets a real (tiny) affordance — and
-            says nothing at all when there is nothing to report (§2.4). */}
-        {sync === 'saving' && <span className="font-mono text-xs text-frost-cyan-500">saving</span>}
-        {/* A data-loss warning was previously rendered in cyan-700 at 2.67:1 —
-            a functional bug, not a style nit. */}
+        {/* Only failure speaks. "saving" flickered next to the avatar on every
+            keystroke to report the thing being signed in already promises, so
+            it was pure noise. A save that did NOT happen is the opposite: it
+            is the one moment the user has to know about, because it is the
+            only time the app's promise is broken.
+
+            Previously rendered in cyan-700 at 2.67:1 — a data-loss warning you
+            can't read is a functional bug, not a style nit. */}
         {sync === 'error' && (
           <span className="font-mono text-xs text-frost-alert">save failed</span>
         )}

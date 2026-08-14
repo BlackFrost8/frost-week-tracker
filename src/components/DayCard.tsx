@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Day } from '../types';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
+import { takePrompts } from '../lib/suggestions';
 import { TaskRow } from './TaskRow';
+
+/** Prompts already handed to a given date this session, so revisiting a day
+    doesn't spend three more from a pool that never refills. */
+const claimed = new Map<string, string[]>();
 
 type Props = {
   day: Day;
@@ -9,7 +14,7 @@ type Props = {
   onToggle: (taskId: string) => void;
   onLabelChange: (taskId: string, label: string) => void;
   onDelete: (taskId: string) => void;
-  onAdd: () => string;
+  onAdd: (label?: string) => string;
 };
 
 /**
@@ -25,6 +30,36 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
   const done = completedCount(day);
   const left = leftCount(day);
   const [focusId, setFocusId] = useState<string | null>(null);
+  /** The row a prompt just created — it opens straight into editing. */
+  const [promptId, setPromptId] = useState<string | null>(null);
+
+  /* Prompts are claimed in an effect rather than during render because
+     `takePrompts` marks them as seen, and StrictMode renders twice — which
+     would silently burn two prompts for every one shown.
+
+     `claimed` is keyed by calendar date and lives for the session, so clicking
+     between days and coming back shows the same prompts instead of spending
+     three more each time. Thirty prompts would otherwise be gone in ten
+     glances, and none of them ever come back. */
+  const [prompts, setPrompts] = useState<string[]>([]);
+  const isEmpty = day.tasks.length === 0;
+
+  useEffect(() => {
+    if (!isEmpty) {
+      // Prompts belong to the empty state only. They are not re-claimed when a
+      // day is emptied again, so deleting tasks can't farm fresh ones.
+      setPrompts([]);
+      return;
+    }
+    const existing = claimed.get(day.date);
+    if (existing) {
+      setPrompts(existing);
+      return;
+    }
+    const picked = takePrompts(3);
+    claimed.set(day.date, picked);
+    setPrompts(picked);
+  }, [day.date, isEmpty]);
 
   return (
     <section
@@ -64,14 +99,39 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
               key={task.id}
               task={task}
               autoFocus={task.id === focusId}
+              startEditing={task.id === promptId}
               onToggle={() => onToggle(task.id)}
               onLabelChange={(label) => onLabelChange(task.id, label)}
               onDelete={() => onDelete(task.id)}
             />
           ))}
 
-          {day.tasks.length === 0 && (
-            <p className="py-2 text-sm text-frost-text-faint">nothing planned yet</p>
+          {isEmpty && (
+            <div className="py-2">
+              <p className="text-sm text-frost-text-faint">nothing planned yet</p>
+
+              {/* Greyed on purpose: these must read as prompts rather than as
+                  tasks that are already there. Clicking one writes it into a
+                  real row and leaves the cursor in it, so it is a starting
+                  point to type over, not a choice to accept. */}
+              {prompts.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+                  {prompts.map((text) => (
+                    <button
+                      key={text}
+                      type="button"
+                      onClick={() => setPromptId(onAdd(text))}
+                      className="flex items-center gap-2 text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
+                    >
+                      <span className="font-mono" aria-hidden="true">
+                        +
+                      </span>
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           <button
