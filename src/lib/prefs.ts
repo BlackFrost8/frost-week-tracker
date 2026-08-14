@@ -1,5 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import type { DayId } from '../types';
 import { auth, db } from './firebase';
+import { DAY_IDS } from './week';
 
 /**
  * Account preferences, as opposed to device preferences.
@@ -11,36 +13,92 @@ import { auth, db } from './firebase';
  * by hand, which is the whole complaint this feature answers.
  */
 
-export type Prefs = {
-  /** Seeded into every day of a newly created week, in this order. */
-  defaultTasks: string[];
+/**
+ * One line of your routine, plus the days it actually belongs to.
+ *
+ * `days` exists because a routine is rarely seven-sevenths uniform: the gym is
+ * Monday/Wednesday/Friday and the long run is Sunday. Seeding those into all
+ * seven days and deleting five by hand every week is the same retyping problem
+ * standing tasks were meant to end.
+ */
+export type StandingTask = {
+  label: string;
+  /** Days this task is seeded into. Empty means it is parked, not deleted. */
+  days: DayId[];
 };
 
-export const EMPTY_PREFS: Prefs = { defaultTasks: [] };
+export type Prefs = {
+  /** Seeded into each matching day of a newly created week, in this order. */
+  defaultTasks: StandingTask[];
+  /**
+   * A square data URL, or null to fall back to the Google account photo.
+   *
+   * Kept in the settings document rather than Firebase Storage: a 192px JPEG
+   * is ~12KB, three orders of magnitude under the 1MB document ceiling, and it
+   * means the picture rides the same read the standing tasks already do
+   * instead of needing a second product enabled and a second set of rules.
+   */
+  avatar: string | null;
+};
+
+export const EMPTY_PREFS: Prefs = { defaultTasks: [], avatar: null };
+
+const everyDay = (): DayId[] => [...DAY_IDS];
 
 /** What a brand-new user gets, so a first week never looks broken or empty. */
-export const STARTER_DEFAULTS = [
+export const STARTER_DEFAULTS: StandingTask[] = [
   'Wake up at 6:00',
   'Gym',
   'Read 10 pages',
   'Drink 2L of water',
   'Cook a healthy meal',
-];
+].map((label) => ({ label, days: everyDay() }));
 
 const ANON_KEY = 'frost-week-tracker:prefs';
 const localKey = (uid: string | null) => (uid ? `frost-week-tracker:prefs:${uid}` : ANON_KEY);
 
+/**
+ * Standing tasks used to be a bare `string[]`. Anything saved before days
+ * existed still arrives in that shape, and it means "every day" — which is
+ * exactly what those weeks were already doing.
+ */
+function toStandingTask(raw: unknown): StandingTask | null {
+  if (typeof raw === 'string') {
+    const label = raw.trim();
+    return label ? { label, days: everyDay() } : null;
+  }
+  if (typeof raw !== 'object' || raw === null) return null;
+
+  const r = raw as Partial<StandingTask>;
+  const label = typeof r.label === 'string' ? r.label.trim() : '';
+  if (!label) return null;
+
+  // Filtering DAY_IDS rather than trusting the stored array keeps the order
+  // canonical and drops anything that isn't a real day id.
+  const days = Array.isArray(r.days)
+    ? DAY_IDS.filter((id) => (r.days as unknown[]).includes(id))
+    : everyDay();
+
+  return { label, days };
+}
+
 function normalise(raw: unknown): Prefs {
   if (typeof raw !== 'object' || raw === null) return EMPTY_PREFS;
-  const list = (raw as Partial<Prefs>).defaultTasks;
-  if (!Array.isArray(list)) return EMPTY_PREFS;
-  return {
-    defaultTasks: list
-      .filter((t): t is string => typeof t === 'string')
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .slice(0, 20),
-  };
+  const r = raw as Partial<Prefs>;
+
+  const defaultTasks = Array.isArray(r.defaultTasks)
+    ? r.defaultTasks
+        .map(toStandingTask)
+        .filter((t): t is StandingTask => t !== null)
+        .slice(0, 20)
+    : [];
+
+  // Only ever a data URL: a remote URL here would be somewhere else's image
+  // loading on every render of the header.
+  const avatar =
+    typeof r.avatar === 'string' && r.avatar.startsWith('data:image/') ? r.avatar : null;
+
+  return { defaultTasks, avatar };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -76,7 +134,7 @@ export async function loadPrefs(): Promise<Prefs> {
     const snap = await getDoc(prefsDoc(uid));
     if (!snap.exists()) {
       // First sign-in on this account: adopt whatever was set up offline.
-      if (local.defaultTasks.length > 0) await savePrefs(local);
+      if (local.defaultTasks.length > 0 || local.avatar) await savePrefs(local);
       return local;
     }
     const cloud = normalise(snap.data());
@@ -92,5 +150,5 @@ export async function savePrefs(prefs: Prefs): Promise<void> {
   const clean = normalise(prefs);
   writeLocal(uid, clean); // Synchronous, cannot fail.
   if (!uid || !db) return;
-  await setDoc(prefsDoc(uid), { defaultTasks: clean.defaultTasks });
+  await setDoc(prefsDoc(uid), { defaultTasks: clean.defaultTasks, avatar: clean.avatar });
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DayId, SyncState, Task, Week } from '../types';
+import type { StandingTask } from '../lib/prefs';
 import { flushPending, type WeekStore } from '../lib/storage';
-import { createWeek, currentWeekStart, uid } from '../lib/week';
+import { createWeek, currentWeekStart, standingTasksFor, uid } from '../lib/week';
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -12,7 +13,7 @@ const SAVE_DEBOUNCE_MS = 300;
  * a pending save is flushed before switching weeks, so edits can never land on
  * the wrong week's row.
  */
-export function useWeek(store: WeekStore, ready: boolean, defaultTasks: string[] = []) {
+export function useWeek(store: WeekStore, ready: boolean, defaultTasks: StandingTask[] = []) {
   const [weekStart, setWeekStartRaw] = useState<string>(currentWeekStart);
   const [week, setWeek] = useState<Week | null>(null);
   const [knownWeeks, setKnownWeeks] = useState<string[]>([]);
@@ -255,18 +256,19 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: string[]
   );
 
   /**
-   * Adds the standing tasks to every day of the week currently open, skipping
-   * any a day already has. Purely additive and explicitly invoked — a new week
-   * seeds itself, but a week already in progress is never rewritten without
-   * being asked.
+   * Adds the standing tasks to the days they are set for in the week currently
+   * open, skipping any a day already has. Purely additive and explicitly
+   * invoked — a new week seeds itself, but a week already in progress is never
+   * rewritten without being asked. Days a task excludes are left untouched
+   * rather than having it removed: this only ever adds.
    */
   const applyStandingTasks = useCallback(
-    (labels: string[]) =>
+    (standing: StandingTask[]) =>
       mutate((w) => ({
         ...w,
         days: w.days.map((day) => {
           const have = new Set(day.tasks.map((t) => t.label.trim().toLowerCase()));
-          const missing = labels
+          const missing = standingTasksFor(standing, day.id)
             .map((l) => l.trim())
             .filter((l) => l && !have.has(l.toLowerCase()))
             .map((label) => ({ id: uid(), label, done: false }));

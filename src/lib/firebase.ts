@@ -35,6 +35,3 @@ export const auth: Auth | null = app ? getAuth(app) : null;
 export const db: Firestore | null = app ? getFirestore(app) : null;
 
 export const isCloudConfigured = configured;
-
-/** Shown on the account card so you can tell which project you're pointed at. */
-export const activeProjectId = configured ? resolved.projectId : null;

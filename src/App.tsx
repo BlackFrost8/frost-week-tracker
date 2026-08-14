@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DayId } from './types';
+import type { StandingTask } from './lib/prefs';
 import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
 import { usePrefs } from './hooks/usePrefs';
@@ -27,7 +28,6 @@ export default function App() {
   const { mode, profile } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
-  const [migrationNote, setMigrationNote] = useState<string | null>(null);
   const [migratedUid, setMigratedUid] = useState<string | null>(null);
 
   const signedIn = mode === 'signed-in';
@@ -39,14 +39,14 @@ export default function App() {
    * gate, `useWeek`'s load effect (registered first, because the hook is
    * called above the migration effect) would read an empty account, build a
    * blank starter week, and the next click would upload it straight over the
-   * weeks migration had just moved in — while the banner said they'd arrived.
+   * weeks migration had just moved in.
    */
   const migrationDone = !signedIn || migratedUid === uid;
   const authSettled = mode !== 'loading' && migrationDone;
 
   // Standing tasks have to be known before a week is created, or a brand-new
   // week gets built empty and never picks them up.
-  const { prefs, prefsReady, updateDefaultTasks } = usePrefs(authSettled, uid);
+  const { prefs, prefsReady, updatePrefs } = usePrefs(authSettled, uid);
   const ready = authSettled && prefsReady;
 
   const {
@@ -66,16 +66,14 @@ export default function App() {
     flush,
   } = useWeek(store, ready, prefs.defaultTasks);
 
+  /* Weeks built while signed out are pulled into the account on first sign-in.
+     It is deliberately silent: being signed in is the whole promise that your
+     work is kept, so announcing that it worked invites the reader to wonder
+     when it doesn't. The only visible outcome is the weeks simply being there. */
   useEffect(() => {
     if (!signedIn || !uid || migratedUid === uid) return;
     let active = true;
     migrateLocalToCloud()
-      .then((count) => {
-        if (active && count > 0) {
-          setMigrationNote(`${count} week${count === 1 ? '' : 's'} moved into your account.`);
-          setTimeout(() => active && setMigrationNote(null), 6000);
-        }
-      })
       .catch(() => {
         /* Offline, or the rules aren't published yet. The local copy is
            untouched and the flag is never set, so the next sign-in retries. */
@@ -88,6 +86,18 @@ export default function App() {
       active = false;
     };
   }, [signedIn, uid, migratedUid]);
+
+  /* Stable identities: `StandingTasks` debounces on a 600ms timer, and a
+     callback that changed on every render would re-arm the timer each time
+     saving lifted state back up here. */
+  const saveDefaultTasks = useCallback(
+    (defaultTasks: StandingTask[]) => void updatePrefs({ defaultTasks }),
+    [updatePrefs],
+  );
+  const saveAvatar = useCallback(
+    (avatar: string | null) => void updatePrefs({ avatar }),
+    [updatePrefs],
+  );
 
   const today = todayISO();
   const todayDay = week?.days.find((d) => d.date === today) ?? null;
@@ -145,20 +155,19 @@ export default function App() {
           onGoToWeek={goToWeek}
           sync={sync}
           profile={profile}
+          avatar={prefs.avatar}
           onOpenAccount={() => setAccountOpen(true)}
           onOpenTheme={() => setThemeOpen(true)}
           wordmark={theme.name}
         />
 
-        {(error || migrationNote) && (
+        {error && (
           <p
             className="font-mono text-sm"
-            style={{
-              color: error ? 'var(--color-frost-alert)' : 'var(--color-frost-cyan-200)',
-            }}
-            role={error ? 'alert' : 'status'}
+            style={{ color: 'var(--color-frost-alert)' }}
+            role="alert"
           >
-            {error ?? migrationNote}
+            {error}
           </p>
         )}
 
@@ -214,8 +223,10 @@ export default function App() {
         profile={profile}
         onSignOut={handleSignOut}
         defaultTasks={prefs.defaultTasks}
-        onSaveDefaultTasks={updateDefaultTasks}
+        onSaveDefaultTasks={saveDefaultTasks}
         onApplyToWeek={applyStandingTasks}
+        avatar={prefs.avatar}
+        onSaveAvatar={saveAvatar}
       />
 
       <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} />

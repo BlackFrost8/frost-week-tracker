@@ -11,6 +11,7 @@ type Props = {
   onGoToWeek: (weekStart: string) => void;
   sync: SyncState;
   profile: Profile | null;
+  avatar: string | null;
   onOpenAccount: () => void;
   onOpenTheme: () => void;
   wordmark: string;
@@ -32,6 +33,7 @@ export function Header({
   onGoToWeek,
   sync,
   profile,
+  avatar,
   onOpenAccount,
   onOpenTheme,
   wordmark,
@@ -166,20 +168,21 @@ export function Header({
           <span className="font-mono text-xs text-frost-alert">save failed</span>
         )}
 
-        {/* The profile is one control, not two: avatar plus first name, opening
-            the account card. Sign-out lives in there rather than sitting in the
-            header competing for attention. */}
+        {/* The picture is the whole control. A name or an address next to it
+            said nothing you don't already know — you are the one signed in —
+            and an email address is the last thing that should sit permanently
+            on screen in a room, a screenshot or a shared display. Everything
+            about the account lives one click in, where it is being asked for.
+            28px rather than 26: it is now the only thing to aim at. */}
         {profile ? (
           <button
             type="button"
             onClick={onOpenAccount}
-            className="group flex items-center gap-2.5"
-            title={profile.email ?? undefined}
+            aria-label="Account"
+            title="Account"
+            className="rounded-full transition-opacity duration-150 hover:opacity-75"
           >
-            <Avatar profile={profile} size={26} />
-            <span className="max-w-[10rem] truncate text-sm text-frost-cyan-300 transition-colors duration-150 group-hover:text-frost-cyan-100">
-              {profile.name?.split(' ')[0] ?? profile.email}
-            </span>
+            <Avatar profile={profile} src={avatar ?? profile.avatarUrl} size={28} />
           </button>
         ) : (
           <button
