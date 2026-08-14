@@ -1,4 +1,5 @@
 import type { Day, DayId, Task, Week } from '../types';
+import type { StandingTask } from './prefs';
 
 export const DAY_IDS: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
@@ -114,13 +115,18 @@ function makeTasks(starter: string[]): Task[] {
   return starter.map((label) => ({ id: uid(), label, done: false }));
 }
 
+/** The standing tasks that belong to one day, in the order they were listed. */
+export function standingTasksFor(standing: StandingTask[], day: DayId): string[] {
+  return standing.filter((t) => t.days.includes(day)).map((t) => t.label);
+}
+
 /**
- * `starter` is the user's standing tasks, seeded into every day. Pass `[]`
- * (or nothing) for a bare week — `normalizeWeek` does exactly that, since a
- * week arriving from storage must be reconstructed as it was saved and never
- * re-seeded.
+ * `starter` is the user's standing tasks, seeded into the days each one is set
+ * for. Pass `[]` (or nothing) for a bare week — `normalizeWeek` does exactly
+ * that, since a week arriving from storage must be reconstructed as it was
+ * saved and never re-seeded.
  */
-export function createWeek(weekStart: string, starter: string[] = []): Week {
+export function createWeek(weekStart: string, starter: StandingTask[] = []): Week {
   return {
     weekStart,
     focus: '',
@@ -130,7 +136,7 @@ export function createWeek(weekStart: string, starter: string[] = []): Week {
       id,
       label: DAY_LABELS[id],
       date: addDays(weekStart, i),
-      tasks: makeTasks(starter),
+      tasks: makeTasks(standingTasksFor(starter, id)),
     })),
   };
 }
