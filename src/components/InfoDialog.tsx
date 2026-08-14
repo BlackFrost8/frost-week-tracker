@@ -27,7 +27,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
     title: 'Tasks',
     items: [
       'Add a task with "+ add task", then type. Enter saves it, Escape throws it away.',
-      'An empty day offers a few greyed prompts — click one to start from it.',
+      'An empty day shows a greyed suggestion — click it for a blank row to type in.',
       'Click anywhere on a row to tick it off. Hover a row to edit or delete it.',
       'Clearing a task’s text deletes the row, so a half-added task never gets stuck.',
     ],

@@ -11,37 +11,41 @@
  * job, and seeing it a second time makes the app look like it is nagging.
  */
 
+/* Kept plain on purpose. These are read in a fraction of a second, out of the
+   corner of the eye, by someone who has not decided what to write yet — so
+   each one has to be a thing you obviously either do or don't do. Anything
+   that needs a beat to parse is doing the opposite of its job. */
 const POOL: string[] = [
-  'Read 20 pages',
-  'Review today’s notes',
+  'Finish your homework',
+  'Revise for 30 minutes',
+  'Read a chapter',
+  'Tidy your room',
+  'Go for a run',
+  'Drink more water',
+  'Call home',
+  'Do the washing up',
+  'Take the bins out',
   'Pack your bag for tomorrow',
-  'Drink 2L of water',
-  'Go for a walk',
-  'Tidy your desk',
-  'Plan tomorrow in five minutes',
-  'Stretch for ten minutes',
-  'Check the homework diary',
-  'Start the essay draft',
-  'Practise an instrument',
-  'Inbox to zero',
   'Make your bed',
-  'Cook something proper',
-  'Reread one set of flashcards',
-  'Get outside before dark',
-  'Message someone back',
-  'Wash up before bed',
-  'Lay out clothes for the morning',
-  'Do one past paper question',
+  'Go to bed early',
+  'Stretch for ten minutes',
+  'Reply to your messages',
+  'Plan tomorrow',
   'Back up your notes',
-  'Screen off an hour before sleep',
-  'Sort one folder out',
-  'Write down what went well',
-  'Sit down and do nothing for five minutes',
-  'Top up your water bottle',
-  'Charge everything overnight',
-  'Read something that isn’t for school',
-  'Fix the one thing you keep putting off',
-  'Ask about the thing you didn’t understand',
+  'Clear your desk',
+  'Get some fresh air',
+  'Practise your instrument',
+  'Check your timetable',
+  'Do your laundry',
+  'Cook a proper meal',
+  'Charge your devices',
+  'Go over today’s notes',
+  'Start your assignment',
+  'Take a proper break',
+  'Water the plants',
+  'Sort out your folders',
+  'Write down three good things',
+  'Put your phone away for an hour',
 ];
 
 /* Device-local, like the theme and the timer. This is about the screen in
@@ -68,27 +72,18 @@ function writeSeen(seen: Set<string>): void {
 }
 
 /**
- * Up to `count` prompts that have never been shown, marked as shown.
+ * One prompt that has never been shown, marked as shown.
  *
- * Returns fewer than asked, or none at all, as the pool runs down. That is the
- * intended end state: once you've seen them you know what the card does, and
- * an empty day should be empty.
+ * Returns null once the pool runs down, which is the intended end state: by
+ * then you know what the card is for, and an empty day should just be empty.
  */
-export function takePrompts(count: number): string[] {
+export function takePrompt(): string | null {
   const seen = readSeen();
   const fresh = POOL.filter((p) => !seen.has(p));
-  if (fresh.length === 0) return [];
+  if (fresh.length === 0) return null;
 
-  // Fisher–Yates over a copy, so the order varies per day rather than always
-  // walking the list from the top.
-  const pool = [...fresh];
-  for (let i = pool.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  const picked = pool.slice(0, count);
-  for (const p of picked) seen.add(p);
+  const picked = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.add(picked);
   writeSeen(seen);
   return picked;
 }

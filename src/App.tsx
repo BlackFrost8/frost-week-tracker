@@ -153,7 +153,7 @@ export default function App() {
     onLabelChange: (taskId: string, label: string) =>
       setTaskLabel(selectedDay.id, taskId, label),
     onDelete: (taskId: string) => removeTask(selectedDay.id, taskId),
-    onAdd: (label?: string) => addTask(selectedDay.id, label),
+    onAdd: () => addTask(selectedDay.id),
   };
 
   return (

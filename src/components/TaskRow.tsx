@@ -10,13 +10,6 @@ type Props = {
   dense?: boolean;
   /** Set on the row `+ add task` just created, so it is typable immediately. */
   autoFocus?: boolean;
-  /**
-   * Opens the row in its editing state on mount. Used by the empty-day
-   * prompts, which arrive with their text already filled in: the point of
-   * clicking one is to keep typing, so it must not land as a finished task
-   * that has to be clicked a second time to change.
-   */
-  startEditing?: boolean;
 };
 
 export function TaskRow({
@@ -26,10 +19,9 @@ export function TaskRow({
   onDelete,
   dense = false,
   autoFocus = false,
-  startEditing = false,
 }: Props) {
   const isBlank = task.label.trim() === '';
-  const [editing, setEditing] = useState(startEditing);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.label);
   const inputRef = useRef<HTMLInputElement>(null);
 

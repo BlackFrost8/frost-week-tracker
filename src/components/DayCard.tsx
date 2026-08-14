@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Day } from '../types';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
-import { takePrompts } from '../lib/suggestions';
+import { takePrompt } from '../lib/suggestions';
 import { TaskRow } from './TaskRow';
 
-/** Prompts already handed to a given date this session, so revisiting a day
-    doesn't spend three more from a pool that never refills. */
-const claimed = new Map<string, string[]>();
+/** The prompt already handed to a given date this session, so revisiting a day
+    doesn't spend another from a pool that never refills. */
+const claimed = new Map<string, string | null>();
 
 type Props = {
   day: Day;
@@ -14,7 +14,7 @@ type Props = {
   onToggle: (taskId: string) => void;
   onLabelChange: (taskId: string, label: string) => void;
   onDelete: (taskId: string) => void;
-  onAdd: (label?: string) => string;
+  onAdd: () => string;
 };
 
 /**
@@ -30,35 +30,32 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
   const done = completedCount(day);
   const left = leftCount(day);
   const [focusId, setFocusId] = useState<string | null>(null);
-  /** The row a prompt just created — it opens straight into editing. */
-  const [promptId, setPromptId] = useState<string | null>(null);
 
-  /* Prompts are claimed in an effect rather than during render because
-     `takePrompts` marks them as seen, and StrictMode renders twice — which
-     would silently burn two prompts for every one shown.
+  /* The prompt is claimed in an effect rather than during render because
+     `takePrompt` marks it as seen, and StrictMode renders twice — which would
+     silently burn two prompts for every one shown.
 
      `claimed` is keyed by calendar date and lives for the session, so clicking
-     between days and coming back shows the same prompts instead of spending
-     three more each time. Thirty prompts would otherwise be gone in ten
-     glances, and none of them ever come back. */
-  const [prompts, setPrompts] = useState<string[]>([]);
+     between days and coming back shows the same prompt instead of spending
+     another. Thirty prompts would otherwise be gone in thirty glances, and
+     none of them ever come back. */
+  const [prompt, setPrompt] = useState<string | null>(null);
   const isEmpty = day.tasks.length === 0;
 
   useEffect(() => {
     if (!isEmpty) {
-      // Prompts belong to the empty state only. They are not re-claimed when a
-      // day is emptied again, so deleting tasks can't farm fresh ones.
-      setPrompts([]);
+      // The prompt belongs to the empty state only. It is not re-claimed when
+      // a day is emptied again, so deleting tasks can't farm fresh ones.
+      setPrompt(null);
       return;
     }
-    const existing = claimed.get(day.date);
-    if (existing) {
-      setPrompts(existing);
+    if (claimed.has(day.date)) {
+      setPrompt(claimed.get(day.date) ?? null);
       return;
     }
-    const picked = takePrompts(3);
+    const picked = takePrompt();
     claimed.set(day.date, picked);
-    setPrompts(picked);
+    setPrompt(picked);
   }, [day.date, isEmpty]);
 
   return (
@@ -99,7 +96,6 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
               key={task.id}
               task={task}
               autoFocus={task.id === focusId}
-              startEditing={task.id === promptId}
               onToggle={() => onToggle(task.id)}
               onLabelChange={(label) => onLabelChange(task.id, label)}
               onDelete={() => onDelete(task.id)}
@@ -110,26 +106,25 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
             <div className="py-2">
               <p className="text-sm text-frost-text-faint">nothing planned yet</p>
 
-              {/* Greyed on purpose: these must read as prompts rather than as
-                  tasks that are already there. Clicking one writes it into a
-                  real row and leaves the cursor in it, so it is a starting
-                  point to type over, not a choice to accept. */}
-              {prompts.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-                  {prompts.map((text) => (
-                    <button
-                      key={text}
-                      type="button"
-                      onClick={() => setPromptId(onAdd(text))}
-                      className="flex items-center gap-2 text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
-                    >
-                      <span className="font-mono" aria-hidden="true">
-                        +
-                      </span>
-                      {text}
-                    </button>
-                  ))}
-                </div>
+              {/* Greyed on purpose: it must read as an idea rather than as a
+                  task that is already there.
+
+                  Clicking it opens an EMPTY row, not one pre-filled with the
+                  suggestion. The suggestion's job is to break the blank page —
+                  what you actually write is nearly always a version of it, not
+                  it word for word, and handing over pre-filled text means
+                  clearing someone else's wording before you can type yours. */}
+              {prompt && (
+                <button
+                  type="button"
+                  onClick={() => setFocusId(onAdd())}
+                  className="mt-3 flex items-center gap-2 text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
+                >
+                  <span className="font-mono" aria-hidden="true">
+                    +
+                  </span>
+                  {prompt}
+                </button>
               )}
             </div>
           )}
