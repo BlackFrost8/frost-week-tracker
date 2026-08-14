@@ -444,6 +444,18 @@ The 16 borders are 5 checkbox squares + 8 hairline dividers + 3 input underlines
     which is fine for five letters. Space Grotesk is the fallback so a blocked
     font CDN — plausible on a school network — degrades to the previous look
     rather than to Times.
+30. **The wordmark, the header cluster and the IntentPanel run on the accent
+    ramp, not the grey text tiers.** Grey there read as disabled chrome sitting
+    next to coloured content. Hierarchy is carried by *position on the ramp*
+    instead of by lightness: 500 for quiet verbs (`today`, `reset`, `clear
+    checks`, field labels), 300 for the wall clock and `sign in`, 100/050 for
+    the numbers and values you actually read. Use ramp tiers there, never
+    `text-dim`/`text-faint`.
+31. **In the IntentPanel, colour means exactly one thing: grey is an
+    unanswered prompt, accent is your own words.** All three fields share the
+    same pair. An earlier version walked the three down the accent ramp, which
+    looked like a ranking of focus over affirmation — an order that doesn't
+    exist. Don't reintroduce a per-field gradient there.
 ---
 
 ## 7. Testing traps in this environment

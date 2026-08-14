@@ -404,6 +404,38 @@ body {
   }
 }
 
+/* ── Wordmark ────────────────────────────────────────────────────────────────
+   The mark is the one place a literal gradient earns its keep: five wide
+   letters, no competing content, and it names the theme. Stops run from the
+   pale end of the accent ramp to the mid — both derived, so the sweep re-reads
+   correctly on a light canvas (where 050 resolves dark and the gradient simply
+   runs the other way) and on any custom accent.
+
+   The flat colour is declared first as a real fallback: if background-clip
+   ever fails, transparent text would erase the app's name. */
+.frost-wordmark {
+  color: var(--color-frost-cyan-200);
+  transition: filter 150ms ease-out;
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .frost-wordmark {
+    background-image: linear-gradient(
+      100deg,
+      var(--color-frost-cyan-050) 0%,
+      var(--color-frost-cyan-200) 55%,
+      var(--color-frost-cyan-300) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.frost-wordmark:hover {
+  filter: brightness(1.18);
+}
+
 /* ── Fields — underline, not box (§1.2: stop boxing everything) ───────────── */
 .frost-field {
   background: transparent;

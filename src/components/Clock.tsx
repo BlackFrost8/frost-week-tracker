@@ -23,8 +23,12 @@ function useWallClock(): string {
   return text;
 }
 
+/* The header cluster runs on the accent ramp rather than the grey tiers, with
+   hierarchy carried by how far down the ramp each control sits: 500 for the
+   quiet verbs, 300 for the wall clock, 100/200 for the numbers you actually
+   read. Grey here read as disabled chrome next to the coloured week nav. */
 const quiet =
-  'text-xs text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300';
+  'text-xs text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200';
 
 function ExpandIcon() {
   return (
@@ -141,8 +145,8 @@ export function Clock() {
     running
       ? 'var(--color-frost-cyan-200)'
       : big || dirty
-        ? 'var(--color-frost-text)'
-        : 'var(--color-frost-text-dim)';
+        ? 'var(--color-frost-cyan-050)'
+        : 'var(--color-frost-cyan-100)';
 
   /** The digits, at whichever size the surface calls for. */
   const face = (big: boolean) => {
@@ -242,7 +246,7 @@ export function Clock() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="font-mono text-sm tabular-nums text-frost-text-dim" title="current time">
+      <span className="font-mono text-sm tabular-nums text-frost-cyan-300" title="current time">
         {wall}
       </span>
 
