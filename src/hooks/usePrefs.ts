@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EMPTY_PREFS, STARTER_DEFAULTS, loadPrefs, savePrefs, type Prefs } from '../lib/prefs';
-
-const SEEDED_KEY = 'frost-week-tracker:prefs-seeded';
+import { EMPTY_PREFS, loadPrefs, savePrefs, type Prefs } from '../lib/prefs';
 
 /**
  * `ready` matters: a week must not be created before the standing tasks are
@@ -27,19 +25,11 @@ export function usePrefs(authReady: boolean, uid: string | null) {
     setReady(false);
 
     loadPrefs()
+      // Whatever is stored, unmodified. Nothing is seeded on a new account:
+      // an empty standing-task list is a real, chosen state, and the empty day
+      // card offers greyed prompts rather than five tasks to delete.
       .then((loaded) => {
-        if (!active) return;
-        // A brand-new user has no list, and an empty week reads as broken. Seed
-        // the old hardcoded starters once, then never again — so someone who
-        // deliberately clears the list doesn't get them back on next load.
-        if (loaded.defaultTasks.length === 0 && localStorage.getItem(SEEDED_KEY) !== 'yes') {
-          localStorage.setItem(SEEDED_KEY, 'yes');
-          const seeded = { ...loaded, defaultTasks: STARTER_DEFAULTS };
-          apply(seeded);
-          void savePrefs(seeded).catch(() => {});
-        } else {
-          apply(loaded);
-        }
+        if (active) apply(loaded);
       })
       .catch(() => {
         if (active) apply(EMPTY_PREFS);
