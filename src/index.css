@@ -50,8 +50,22 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* Runtime theme channel.
+   `lib/theme.ts` overwrites every one of these (and the @theme tokens above)
+   as inline properties on <html> before React mounts. The values here are the
+   Frost defaults, and they exist so the stylesheet is valid and correct on its
+   own — with JS broken or slow you get the original black-and-cyan app, not a
+   page of invalid colours.
+
+   The triplets are space-separated so they can be used as `rgb(var(…) / a)`,
+   which is what lets a themed colour carry an alpha. `far` is the end of the
+   scale opposite the canvas: white on a dark theme, black on a light one. */
 :root {
-  --frost-hairline: rgba(255, 255, 255, 0.06);
+  --frost-accent-rgb: 0 239 255;
+  --frost-base-rgb: 0 0 0;
+  --frost-far-rgb: 255 255 255;
+  --frost-on-accent: #000000;
+  --frost-hairline: rgb(var(--frost-far-rgb) / 0.06);
   color-scheme: dark;
 }
 
@@ -62,14 +76,14 @@ body,
 }
 
 body {
-  background-color: #000000;
+  background-color: var(--color-frost-black);
   color: var(--color-frost-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: rgba(0, 239, 255, 0.28);
+  background: rgb(var(--frost-accent-rgb) / 0.28);
   color: var(--color-frost-cyan-050);
 }
 
@@ -82,7 +96,7 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.09) transparent;
+  scrollbar-color: rgb(var(--frost-far-rgb) / 0.09) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
@@ -92,7 +106,7 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgb(var(--frost-far-rgb) / 0.09);
   border-radius: 999px;
 }
 
@@ -111,9 +125,9 @@ body {
   pointer-events: none;
   /* Deliberately off-centre — dead-centre reads as template-generated. */
   background:
-    radial-gradient(900px 620px at 64% 10%, rgba(0, 239, 255, 0.14), transparent 68%),
-    radial-gradient(620px 460px at 14% 82%, rgba(0, 201, 221, 0.07), transparent 72%),
-    radial-gradient(1200px 900px at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
+    radial-gradient(900px 620px at 64% 10%, rgb(var(--frost-accent-rgb) / 0.14), transparent 68%),
+    radial-gradient(620px 460px at 14% 82%, rgb(var(--frost-accent-rgb) / 0.07), transparent 72%),
+    radial-gradient(1200px 900px at 50% 45%, transparent 55%, rgb(var(--frost-base-rgb) / 0.6) 100%);
 }
 
 .frost-mote {
@@ -134,7 +148,7 @@ body {
    already excludes .frost-mote — these are atmosphere, not UI. */
 .frost-mote--bright {
   background: var(--color-frost-cyan-200);
-  box-shadow: 0 0 6px 1px rgba(0, 239, 255, 0.55);
+  box-shadow: 0 0 6px 1px rgb(var(--frost-accent-rgb) / 0.55);
 }
 
 @keyframes frost-drift {
@@ -161,12 +175,12 @@ body {
 @keyframes frost-hero-breathe {
   0%,
   100% {
-    filter: drop-shadow(0 0 7px rgba(0, 239, 255, 0.4))
-      drop-shadow(0 0 22px rgba(0, 201, 221, 0.2));
+    filter: drop-shadow(0 0 7px rgb(var(--frost-accent-rgb) / 0.4))
+      drop-shadow(0 0 22px rgb(var(--frost-accent-rgb) / 0.2));
   }
   50% {
-    filter: drop-shadow(0 0 14px rgba(0, 255, 255, 0.62))
-      drop-shadow(0 0 38px rgba(0, 239, 255, 0.3));
+    filter: drop-shadow(0 0 14px rgb(var(--frost-accent-rgb) / 0.62))
+      drop-shadow(0 0 38px rgb(var(--frost-accent-rgb) / 0.3));
   }
 }
 .frost-hero-glow {
@@ -178,10 +192,10 @@ body {
 @keyframes frost-hero-text {
   0%,
   100% {
-    text-shadow: 0 0 18px rgba(0, 239, 255, 0.3);
+    text-shadow: 0 0 18px rgb(var(--frost-accent-rgb) / 0.3);
   }
   50% {
-    text-shadow: 0 0 28px rgba(0, 255, 255, 0.48);
+    text-shadow: 0 0 28px rgb(var(--frost-accent-rgb) / 0.48);
   }
 }
 .frost-hero-text {
@@ -211,20 +225,20 @@ body {
 /* 2. Today's card: present, static, clearly dimmer than the hero. */
 .frost-today-glow {
   box-shadow:
-    0 0 0 1px rgba(0, 201, 221, 0.3),
-    0 0 30px -6px rgba(0, 239, 255, 0.22);
+    0 0 0 1px rgb(var(--frost-accent-rgb) / 0.3),
+    0 0 30px -6px rgb(var(--frost-accent-rgb) / 0.22);
 }
 
 /* 3. Save button success — one-shot, then settles flat. */
 @keyframes frost-confirm {
   0% {
-    box-shadow: 0 0 0 0 rgba(0, 239, 255, 0);
+    box-shadow: 0 0 0 0 rgb(var(--frost-accent-rgb) / 0);
   }
   35% {
-    box-shadow: 0 0 18px 2px rgba(0, 255, 255, 0.55);
+    box-shadow: 0 0 18px 2px rgb(var(--frost-accent-rgb) / 0.55);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(0, 239, 255, 0);
+    box-shadow: 0 0 0 0 rgb(var(--frost-accent-rgb) / 0);
   }
 }
 .frost-confirm {
@@ -254,13 +268,13 @@ body {
   border-radius: 999px;
   background: radial-gradient(
     circle,
-    rgba(0, 255, 255, 0.55) 0%,
-    rgba(0, 239, 255, 0.18) 45%,
+    rgb(var(--frost-accent-rgb) / 0.55) 0%,
+    rgb(var(--frost-accent-rgb) / 0.18) 45%,
     transparent 70%
   );
   box-shadow:
-    0 0 12px 2px rgba(0, 239, 255, 0.42),
-    0 0 28px 6px rgba(0, 201, 221, 0.2);
+    0 0 12px 2px rgb(var(--frost-accent-rgb) / 0.42),
+    0 0 28px 6px rgb(var(--frost-accent-rgb) / 0.2);
   will-change: transform, opacity;
   animation: frost-ripple 560ms cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
 }

@@ -26,7 +26,9 @@ Local `main` now carries everything:
 | `05fdbdd` | This file |
 | `6a21b36` | Chroma budget, Google login, add-task clutter |
 | `60ea184` | Layout: week strip, three regions, spacing cadence |
-| *(latest)* | Local-first sync, cross-device fixes, clock/timer, click ripple |
+| `5547f3a` | Local-first sync, cross-device fixes, clock/timer, click ripple |
+| `6caa906` | Typed countdown length, full-screen timer focus view |
+| *(latest)* | Themes behind the wordmark, standing tasks in account settings |
 
 No PR is needed — the design work is on `main` now. **`gh` is not installed on
 this machine.** Nothing in the code is half-finished.
@@ -71,15 +73,6 @@ Fix: **Repo → Settings → Pages → Build and deployment → Source → "GitH
 
 This is not a code bug. Do not "fix" it by changing `vite.config.ts` `base` — that is
 already correct (`base: './'`, which works on both a project site and a custom domain).
-
-### 2.4 Open the PR
-
-`gh` is not installed, so this is a browser step:
-
-https://github.com/BlackFrost8/frost-week-tracker/compare/main...design/chroma-budget-and-google-login?expand=1
-
-The branch carries three unpushed-to-main commits plus this session's layout
-work. Merging it is what puts everything on `main`.
 
 ### 2.2 Push
 
@@ -143,15 +136,20 @@ src/
 │   ├── week.ts            Date math, week construction, ALL derived stats
 │   ├── storage.ts         WeekStore interface + local and cloud implementations
 │   ├── firebase.ts        App / auth / Firestore Lite handles; null when unconfigured
-│   └── firebase-config.ts The six pasted values — the only setup step in the app
+│   ├── firebase-config.ts The six pasted values — the only setup step in the app
+│   ├── theme.ts           Presets + the colour maths that derives a whole palette
+│   └── prefs.ts           Standing tasks: local-first, mirrored to the account
 ├── hooks/
 │   ├── useAuth.ts         Session state + Profile, Google + email sign in/out
 │   ├── useWeek.ts         Current Week + every mutation + debounced autosave
 │   ├── useClock.ts        Stopwatch/countdown derived from one epoch timestamp
-│   └── useClickRipple.ts  Capture-phase click bloom, own layer, JS-gated
+│   ├── useClickRipple.ts  Capture-phase click bloom, own layer, JS-gated
+│   ├── useTheme.ts        Applies + persists the chosen theme
+│   └── usePrefs.ts        Loads standing tasks; gates week creation on them
 └── components/
     ├── AmbientBackground  Fixed black canvas, cyan wash, 110 drifting motes
     ├── Clock              Wall clock + two-mode timer + portalled focus view
+    ├── ThemeDialog        Presets + advanced two-colour picker, behind the wordmark
     ├── WeekStrip          The 7 days, horizontal. Selects; does not expand
     ├── DayCard            The focal card — shows whichever day is selected
     ├── HeroPanel          The signature element — owns the only looping glow
@@ -288,6 +286,38 @@ Don't "fix" these without reading why.
     the same five sizes as before. Don't extend the shared scale to cover it.
 
 ---
+21. **The palette is now runtime-driven, and §6's token values are defaults
+    rather than constants.** `lib/theme.ts` overwrites every `--color-frost-*`
+    token as an inline property on `<html>` before React mounts. The values in
+    `@theme` and `:root` are the Frost theme, kept accurate so the stylesheet
+    is right on its own if JS never runs. **This is why no colour may be
+    hardcoded in a component any more** — a literal `#00efff` or
+    `rgba(0,239,255,…)` is invisible to theming and will simply stay cyan while
+    everything around it changes. Use the tokens, or
+    `rgb(var(--frost-accent-rgb) / a)` when you need an alpha.
+22. **A theme is two colours; the other thirteen are derived.** Presets and the
+    advanced picker both feed one `{primary, accent}` pair through
+    `deriveTheme`. Every text tier is mixed *towards the end of the scale
+    opposite the canvas*, which is what makes a light primary flip the whole app
+    to dark text with no `if (light)` anywhere in a component. Don't add
+    hand-tuned per-theme overrides; fix the derivation instead.
+23. **`--frost-on-accent` breaks ties towards white (the 1.2 factor).** A
+    saturated mid blue scores 4.60 against black and 4.56 against white — a
+    rounding error that would otherwise put muddy black text on every button.
+24. **The theme is device-local; standing tasks are account-level.** Not an
+    inconsistency. A theme is about the screen and the room — you may well want
+    Office on a bright school Chromebook and Frost at night. Standing tasks are
+    *content*, so they sync, or setting them up on the PC would leave the
+    Chromebook still typing them by hand, which is the point of the feature.
+25. **Standing tasks are applied at week creation only, never retroactively.**
+    `createWeek(weekStart, starter)` seeds them; `normalizeWeek` deliberately
+    calls `createWeek(weekStart)` with no starter, because a week arriving from
+    storage must be reconstructed exactly as saved. Editing the list must never
+    reach back into weeks you've already worked on.
+26. **`usePrefs` gates `ready`, and `useWeek` reads the list through a ref.**
+    The gate stops a brand-new week being built empty before the list has
+    loaded; the ref stops an edit to the list re-running the load effect and
+    swapping the week out from under someone mid-keystroke.
 
 ## 6. Design system — the rules that keep it from regressing
 

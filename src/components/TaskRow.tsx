@@ -75,7 +75,7 @@ export function TaskRow({
       <div className={`flex items-center gap-3 ${pad}`}>
         <span
           className="h-[18px] w-[18px] shrink-0 rounded-[4px]"
-          style={{ border: '1px solid rgba(0,239,255,0.18)' }}
+          style={{ border: '1px solid rgb(var(--frost-accent-rgb) / 0.18)' }}
           aria-hidden="true"
         />
         <input
@@ -119,7 +119,7 @@ export function TaskRow({
                 backgroundColor: 'var(--color-frost-cyan-200)',
                 border: '1px solid var(--color-frost-cyan-200)',
               }
-            : { border: '1px solid rgba(0,239,255,0.22)', backgroundColor: 'rgba(0,239,255,0.03)' }
+            : { border: '1px solid rgb(var(--frost-accent-rgb) / 0.22)', backgroundColor: 'rgb(var(--frost-accent-rgb) / 0.03)' }
         }
       >
         {task.done && (
@@ -127,7 +127,7 @@ export function TaskRow({
             <path
               d="M2 6.3 L4.6 8.9 L10 3.4"
               fill="none"
-              stroke="#000000"
+              stroke="var(--frost-on-accent)"
               strokeWidth="2.2"
               strokeLinecap="round"
               strokeLinejoin="round"

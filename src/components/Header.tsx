@@ -12,6 +12,7 @@ type Props = {
   sync: SyncState;
   profile: Profile | null;
   onOpenAccount: () => void;
+  onOpenTheme: () => void;
 };
 
 /** "2026-08-10" -> "10 – 16 August" (or "28 July – 3 August" across a boundary). */
@@ -31,6 +32,7 @@ export function Header({
   sync,
   profile,
   onOpenAccount,
+  onOpenTheme,
 }: Props) {
   const thisWeek = currentWeekStart();
   const [listOpen, setListOpen] = useState(false);
@@ -76,9 +78,20 @@ export function Header({
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
-      {/* The one uppercase, wide-tracked element in the app (§2.3). */}
+      {/* The one uppercase, wide-tracked element in the app (§2.3). It is also
+          the theme control — the wordmark is the app's identity, so putting
+          "change how this looks" behind it needs no extra chrome in a header
+          that is deliberately sparse. */}
       <h1 className="font-display text-base font-medium uppercase tracking-[0.42em] text-frost-text">
-        Frost
+        <button
+          type="button"
+          onClick={onOpenTheme}
+          className="transition-colors duration-150 hover:text-frost-cyan-200"
+          aria-haspopup="dialog"
+          title="Change the theme"
+        >
+          Frost
+        </button>
       </h1>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">

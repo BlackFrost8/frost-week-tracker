@@ -31,8 +31,8 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
       className={`frost-rise rounded-2xl p-6 sm:p-8 ${isToday ? 'frost-today-glow' : ''}`}
       style={{
         background: isToday
-          ? 'radial-gradient(130% 110% at 0% 0%, rgba(0,239,255,0.075), rgba(0,8,8,0.9) 62%)'
-          : 'rgba(0,8,8,0.72)',
+          ? 'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), rgb(var(--frost-base-rgb) / 0.9) 62%)'
+          : 'rgb(var(--frost-base-rgb) / 0.72)',
       }}
       aria-label={isToday ? `Today, ${day.label}` : day.label}
     >

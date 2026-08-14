@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   sendPasswordReset,
   signIn,
@@ -14,7 +14,103 @@ type Props = {
   onClose: () => void;
   profile: Profile | null;
   onSignOut: () => void;
+  defaultTasks: string[];
+  onSaveDefaultTasks: (tasks: string[]) => void;
 };
+
+/**
+ * The tasks seeded into every day of a newly created week.
+ *
+ * Edits are debounced rather than saved per keystroke: the local write is
+ * free, but each one is also a Firestore document write, and typing "Wake up
+ * at 6:00" would be nineteen of them.
+ */
+function StandingTasks({
+  tasks,
+  onSave,
+}: {
+  tasks: string[];
+  onSave: (tasks: string[]) => void;
+}) {
+  const [draft, setDraft] = useState<string[]>(tasks);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(false);
+
+  // Adopt external changes (a sync from another device) only while idle, so a
+  // late-arriving load can't overwrite something being typed right now.
+  useEffect(() => {
+    if (!timer.current) setDraft(tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      onSave(draft.map((t) => t.trim()).filter(Boolean));
+    }, 600);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [draft, onSave]);
+
+  const setAt = (i: number, value: string) =>
+    setDraft((d) => d.map((t, idx) => (idx === i ? value : t)));
+  const removeAt = (i: number) => setDraft((d) => d.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="mt-7">
+      <h3 className="text-sm text-frost-text">Standing tasks</h3>
+      <p className="mt-1.5 text-xs leading-relaxed text-frost-text-faint">
+        Seeded into every day of a new week, so you stop retyping your routine. Weeks you've
+        already started are left alone.
+      </p>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {draft.map((task, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <input
+              value={task}
+              onChange={(e) => setAt(i, e.target.value)}
+              placeholder="Something you do every day"
+              aria-label={`Standing task ${i + 1}`}
+              className="frost-field min-w-0 flex-1 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => removeAt(i)}
+              aria-label={`Remove ${task || 'this task'}`}
+              className="shrink-0 text-frost-text-faint transition-colors duration-150 hover:text-frost-alert"
+            >
+              <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden="true">
+                <path
+                  d="M1.2 1.2 8.8 8.8M8.8 1.2 1.2 8.8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {draft.length < 20 && (
+        <button
+          type="button"
+          onClick={() => setDraft((d) => [...d, ''])}
+          className="mt-3 text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
+        >
+          + add a standing task
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** Firebase throws `auth/…` codes at the UI. Say something a person can act on. */
 function friendlyAuthError(err: unknown): string | null {
@@ -48,7 +144,14 @@ function friendlyAuthError(err: unknown): string | null {
   }
 }
 
-export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
+export function AccountDialog({
+  open,
+  onClose,
+  profile,
+  onSignOut,
+  defaultTasks,
+  onSaveDefaultTasks,
+}: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -125,7 +228,7 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
       className="fixed inset-0 z-50 grid place-items-center p-5"
       // Dimming black with more black separates nothing; the blur is what
       // actually pushes the page behind the dialog.
-      style={{ backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}
+      style={{ backgroundColor: 'rgb(var(--frost-base-rgb) / 0.72)', backdropFilter: 'blur(6px)' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -135,7 +238,7 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
         className="frost-rise w-full max-w-sm rounded-2xl p-7"
         style={{
           background:
-            'radial-gradient(130% 110% at 0% 0%, rgba(0,239,255,0.075), rgba(0,8,8,0.94) 62%)',
+            'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -150,11 +253,18 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
               </span>
               .
             </p>
+
+            <span className="frost-divider mt-7 block" />
+            <StandingTasks tasks={defaultTasks} onSave={onSaveDefaultTasks} />
+
             <button
               type="button"
               onClick={onClose}
               className="mt-7 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150"
-              style={{ backgroundColor: 'var(--color-frost-cyan-200)', color: '#000000' }}
+              style={{
+                backgroundColor: 'var(--color-frost-cyan-200)',
+                color: 'var(--frost-on-accent)',
+              }}
             >
               got it
             </button>
@@ -173,7 +283,7 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
               onClick={handleGoogle}
               disabled={busy}
               className="mt-7 flex w-full items-center justify-center gap-3 rounded-lg px-5 py-3 text-sm transition-colors duration-150 disabled:opacity-50"
-              style={{ backgroundColor: 'var(--color-frost-cyan-200)', color: '#000000' }}
+              style={{ backgroundColor: 'var(--color-frost-cyan-200)', color: 'var(--frost-on-accent)' }}
             >
               <GoogleMark size={16} />
               {busy ? 'opening google…' : 'continue with google'}
@@ -222,7 +332,7 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
                   type="submit"
                   disabled={busy}
                   className="mt-1 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150 disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--color-frost-cyan-300)', color: '#000000' }}
+                  style={{ backgroundColor: 'var(--color-frost-cyan-300)', color: 'var(--frost-on-accent)' }}
                 >
                   {busy ? 'working…' : creating ? 'create account' : 'sign in'}
                 </button>
@@ -292,11 +402,17 @@ export function AccountDialog({ open, onClose, profile, onSignOut }: Props) {
               )}
             </dl>
 
+            <span className="frost-divider mt-7 block" />
+            <StandingTasks tasks={defaultTasks} onSave={onSaveDefaultTasks} />
+
             <button
               type="button"
               onClick={onClose}
               className="mt-7 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150"
-              style={{ backgroundColor: 'var(--color-frost-cyan-200)', color: '#000000' }}
+              style={{
+                backgroundColor: 'var(--color-frost-cyan-200)',
+                color: 'var(--frost-on-accent)',
+              }}
             >
               done
             </button>

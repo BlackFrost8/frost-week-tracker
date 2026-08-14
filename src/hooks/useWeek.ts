@@ -12,7 +12,7 @@ const SAVE_DEBOUNCE_MS = 300;
  * a pending save is flushed before switching weeks, so edits can never land on
  * the wrong week's row.
  */
-export function useWeek(store: WeekStore, ready: boolean) {
+export function useWeek(store: WeekStore, ready: boolean, defaultTasks: string[] = []) {
   const [weekStart, setWeekStartRaw] = useState<string>(currentWeekStart);
   const [week, setWeek] = useState<Week | null>(null);
   const [knownWeeks, setKnownWeeks] = useState<string[]>([]);
@@ -37,6 +37,12 @@ export function useWeek(store: WeekStore, ready: boolean) {
   storeRef.current = store;
 
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* Read through a ref so that editing the standing-task list doesn't re-run
+     the load effect and swap the week out from under an edit in progress. The
+     list only ever matters at the moment a week is created. */
+  const defaultsRef = useRef(defaultTasks);
+  defaultsRef.current = defaultTasks;
 
   /* ── Saving ───────────────────────────────────────────────────────────── */
 
@@ -96,14 +102,14 @@ export function useWeek(store: WeekStore, ready: boolean) {
         if (!active) return;
         // A week you've navigated to but never touched is created in memory and
         // only persisted once you actually edit it.
-        const resolved = existing ?? createWeek(weekStart);
+        const resolved = existing ?? createWeek(weekStart, defaultsRef.current);
         weekRef.current = resolved;
         setWeek(resolved);
         setError(null);
       } catch (e) {
         if (!active) return;
         setError(e instanceof Error ? e.message : 'Could not load this week.');
-        const fallback = createWeek(weekStart);
+        const fallback = createWeek(weekStart, defaultsRef.current);
         weekRef.current = fallback;
         setWeek(fallback);
       } finally {

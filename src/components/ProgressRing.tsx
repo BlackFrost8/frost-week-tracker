@@ -47,7 +47,7 @@ export function ProgressRing({ percent, size, strokeWidth, variant = 'quiet' }: 
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke={isHero ? 'var(--color-frost-cyan-900)' : 'rgba(255,255,255,0.06)'}
+        stroke={isHero ? 'var(--color-frost-cyan-900)' : 'rgb(var(--frost-far-rgb) / 0.06)'}
         strokeWidth={strokeWidth}
       />
       <circle

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DayId } from './types';
 import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
+import { usePrefs } from './hooks/usePrefs';
 import { useWeek } from './hooks/useWeek';
 import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
 import { completedCount, todayISO } from './lib/week';
@@ -13,12 +14,14 @@ import { PaceCurve } from './components/PaceCurve';
 import { WeekStrip } from './components/WeekStrip';
 import { DayCard } from './components/DayCard';
 import { AccountDialog } from './components/AccountDialog';
+import { ThemeDialog } from './components/ThemeDialog';
 
 export default function App() {
   useClickRipple();
 
   const { mode, profile } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
   const [migrationNote, setMigrationNote] = useState<string | null>(null);
   const [migratedUid, setMigratedUid] = useState<string | null>(null);
 
@@ -34,7 +37,12 @@ export default function App() {
    * weeks migration had just moved in — while the banner said they'd arrived.
    */
   const migrationDone = !signedIn || migratedUid === uid;
-  const ready = mode !== 'loading' && migrationDone;
+  const authSettled = mode !== 'loading' && migrationDone;
+
+  // Standing tasks have to be known before a week is created, or a brand-new
+  // week gets built empty and never picks them up.
+  const { prefs, prefsReady, updateDefaultTasks } = usePrefs(authSettled, uid);
+  const ready = authSettled && prefsReady;
 
   const {
     week,
@@ -50,7 +58,7 @@ export default function App() {
     setMeta,
     clearChecks,
     flush,
-  } = useWeek(store, ready);
+  } = useWeek(store, ready, prefs.defaultTasks);
 
   useEffect(() => {
     if (!signedIn || !uid || migratedUid === uid) return;
@@ -132,6 +140,7 @@ export default function App() {
           sync={sync}
           profile={profile}
           onOpenAccount={() => setAccountOpen(true)}
+          onOpenTheme={() => setThemeOpen(true)}
         />
 
         {(error || migrationNote) && (
@@ -197,7 +206,11 @@ export default function App() {
         onClose={() => setAccountOpen(false)}
         profile={profile}
         onSignOut={handleSignOut}
+        defaultTasks={prefs.defaultTasks}
+        onSaveDefaultTasks={updateDefaultTasks}
       />
+
+      <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} />
     </>
   );
 }

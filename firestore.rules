@@ -9,7 +9,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/weeks/{weekStart} {
+    // Everything a user owns lives under their own uid, and the rule is the
+    // same for all of it: weeks, and the settings doc holding standing tasks.
+    match /users/{uid}/{collection}/{docId} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
   }

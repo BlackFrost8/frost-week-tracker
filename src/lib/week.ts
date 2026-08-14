@@ -22,14 +22,9 @@ export const DAY_SHORT: Record<DayId, string> = {
   sun: 'Sun',
 };
 
-/** A few prefilled rows so a new week never looks broken or empty. */
-const STARTER_TASKS = [
-  'Wake up at 6:00',
-  'Gym',
-  'Read 10 pages',
-  'Drink 2L of water',
-  'Cook a healthy meal',
-];
+/* The old hardcoded starter list now lives in `lib/prefs.ts` as the one-time
+   seed for a new user's standing tasks. `createWeek` takes whatever the user
+   has set instead, so a new week arrives already filled with their routine. */
 
 export function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -115,11 +110,17 @@ export function formatLongDate(iso: string): string {
  * ways to add a task. A day now contains only real tasks; the single `+ add
  * task` button appends the one blank row that is being typed into.
  */
-function makeTasks(prefill: boolean): Task[] {
-  return prefill ? STARTER_TASKS.map((label) => ({ id: uid(), label, done: false })) : [];
+function makeTasks(starter: string[]): Task[] {
+  return starter.map((label) => ({ id: uid(), label, done: false }));
 }
 
-export function createWeek(weekStart: string, prefill = true): Week {
+/**
+ * `starter` is the user's standing tasks, seeded into every day. Pass `[]`
+ * (or nothing) for a bare week — `normalizeWeek` does exactly that, since a
+ * week arriving from storage must be reconstructed as it was saved and never
+ * re-seeded.
+ */
+export function createWeek(weekStart: string, starter: string[] = []): Week {
   return {
     weekStart,
     focus: '',
@@ -129,7 +130,7 @@ export function createWeek(weekStart: string, prefill = true): Week {
       id,
       label: DAY_LABELS[id],
       date: addDays(weekStart, i),
-      tasks: makeTasks(prefill),
+      tasks: makeTasks(starter),
     })),
   };
 }
@@ -203,7 +204,7 @@ export function weekTotals(week: Week): { done: number; total: number } {
    well-formed Week rather than letting a bad shape crash the render. */
 
 export function normalizeWeek(raw: unknown, weekStart: string): Week {
-  const base = createWeek(weekStart, false);
+  const base = createWeek(weekStart);
   if (typeof raw !== 'object' || raw === null) return base;
   const r = raw as Partial<Week>;
 

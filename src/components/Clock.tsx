@@ -276,7 +276,7 @@ export function Clock() {
         createPortal(
           <div
             className="frost-rise fixed inset-0 z-[60] grid place-items-center"
-            style={{ backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(14px)' }}
+            style={{ backgroundColor: 'rgb(var(--frost-base-rgb) / 0.72)', backdropFilter: 'blur(14px)' }}
             role="dialog"
             aria-modal="true"
             aria-label="Timer"
