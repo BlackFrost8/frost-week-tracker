@@ -57,7 +57,10 @@ export function usePrefs(authReady: boolean, uid: string | null) {
     async (patch: Partial<Prefs>) => {
       const next = { ...prefsRef.current, ...patch };
       apply(next); // Optimistic: the local write inside savePrefs cannot fail.
-      await savePrefs(next);
+      // Callers fire this and walk away, so a dropped connection has to be
+      // absorbed here or it surfaces as an unhandled rejection. The device
+      // copy is written either way, and it is what the UI reads.
+      await savePrefs(next).catch(() => {});
     },
     [apply],
   );

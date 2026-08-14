@@ -145,10 +145,37 @@ export async function loadPrefs(): Promise<Prefs> {
   }
 }
 
-export async function savePrefs(prefs: Prefs): Promise<void> {
+/**
+ * Cloud writes go out one at a time.
+ *
+ * `firestore/lite` keeps no local mutation queue — every `setDoc` is a bare
+ * HTTP request — so two saves in flight together can land in either order.
+ * Each one writes the whole document, so the straggler doesn't merely lose its
+ * own field: an older snapshot arriving late puts the *previous* avatar or the
+ * previous task list back over the newer one. Saving a picture while the
+ * standing-task debounce is still in the air is enough to do it. And because
+ * `writeLocal` already succeeded, the device that made the edit goes on
+ * showing the right value — the loss only surfaces on another device, or on
+ * the next read from the cloud.
+ *
+ * Ordering is the whole fix. Every save merges from the latest local state at
+ * the moment it is called, so writes issued in order are correct in order;
+ * they only needed to stay in that order on the way out.
+ */
+let queued: Promise<unknown> = Promise.resolve();
+
+export function savePrefs(prefs: Prefs): Promise<void> {
   const uid = auth?.currentUser?.uid ?? null;
   const clean = normalise(prefs);
   writeLocal(uid, clean); // Synchronous, cannot fail.
-  if (!uid || !db) return;
-  await setDoc(prefsDoc(uid), { defaultTasks: clean.defaultTasks, avatar: clean.avatar });
+  if (!uid || !db) return Promise.resolve();
+
+  // The leading catch is load-bearing: without it one failed write leaves a
+  // rejected promise at the head of the queue and every later save is dropped.
+  const write = queued
+    .catch(() => {})
+    .then(() => setDoc(prefsDoc(uid), { defaultTasks: clean.defaultTasks, avatar: clean.avatar }));
+
+  queued = write;
+  return write.then(() => {});
 }
