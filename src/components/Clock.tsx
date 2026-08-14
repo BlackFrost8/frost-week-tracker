@@ -27,8 +27,12 @@ function useWallClock(): string {
    hierarchy carried by how far down the ramp each control sits: 500 for the
    quiet verbs, 300 for the wall clock, 100/200 for the numbers you actually
    read. Grey here read as disabled chrome next to the coloured week nav. */
+/* The vertical padding is not decoration: without it the hit box is the glyph
+   itself — roughly 10px for "±1" or the expand icon — which is a coin-flip to
+   tap on a phone. The negative margin keeps the row's visual spacing exactly
+   where it was, so the targets grow without the header growing with them. */
 const quiet =
-  'text-xs text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200';
+  '-my-2 py-2 text-xs text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200';
 
 function ExpandIcon() {
   return (

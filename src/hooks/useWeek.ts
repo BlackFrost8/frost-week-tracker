@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DayId, SyncState, Task, Week } from '../types';
 import type { StandingTask } from '../lib/prefs';
 import { flushPending, type WeekStore } from '../lib/storage';
-import { createWeek, currentWeekStart, standingTasksFor, uid } from '../lib/week';
+import { addDays, createWeek, currentWeekStart, standingTasksFor, uid } from '../lib/week';
+import { useToday } from './useToday';
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -16,6 +17,7 @@ const SAVE_DEBOUNCE_MS = 300;
 export function useWeek(store: WeekStore, ready: boolean, defaultTasks: StandingTask[] = []) {
   const [weekStart, setWeekStartRaw] = useState<string>(currentWeekStart);
   const [week, setWeek] = useState<Week | null>(null);
+  const [previousWeek, setPreviousWeek] = useState<Week | null>(null);
   const [knownWeeks, setKnownWeeks] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [sync, setSync] = useState<SyncState>('idle');
@@ -36,6 +38,21 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
   const pendingRef = useRef<Week | null>(null);
   const storeRef = useRef(store);
   storeRef.current = store;
+
+  /* Mutations are refused until the store and the account agree.
+     `store` flips to the cloud the instant sign-in resolves, but the week on
+     screen is still the one built while signed out, and the load that would
+     replace it is gated behind migration. Ticking a box in that gap saved the
+     signed-out week into the account, straight over the real one written from
+     another device — and migration then skipped that week precisely because a
+     document already existed for it. */
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+
+  /* Bumped by every mutation. The load effect samples it before its await and
+     again after, so a week fetched across an edit is discarded instead of
+     rendered over the top of it. */
+  const editSeq = useRef(0);
 
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -93,14 +110,27 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
   /* ── Loading ──────────────────────────────────────────────────────────── */
 
   useEffect(() => {
-    if (!ready) return;
-    let active = true;
+    if (!ready) {
+      /* Clear it rather than leaving the old store's week on screen. That week
+         belongs to the session being left behind — signed-out data on the way
+         in, the previous account's data on the way out — and `App` renders the
+         spinner while this is null, which is what actually closes the window
+         `readyRef` refuses to save into. */
+      weekRef.current = null;
+      setWeek(null);
+      return;
+    }
 
+    let active = true;
     setLoading(true);
+
     (async () => {
+      const seq = editSeq.current;
       try {
         const existing = await storeRef.current.loadWeek(weekStart);
-        if (!active) return;
+        // A week fetched across an edit is stale by definition — the edit is
+        // newer than anything this response can contain, so render nothing.
+        if (!active || editSeq.current !== seq) return;
         // A week you've navigated to but never touched is created in memory and
         // only persisted once you actually edit it.
         const resolved = existing ?? createWeek(weekStart, defaultsRef.current);
@@ -108,7 +138,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
         setWeek(resolved);
         setError(null);
       } catch (e) {
-        if (!active) return;
+        if (!active || editSeq.current !== seq) return;
         setError(e instanceof Error ? e.message : 'Could not load this week.');
         const fallback = createWeek(weekStart, defaultsRef.current);
         weekRef.current = fallback;
@@ -118,6 +148,28 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
       }
     })();
 
+    return () => {
+      active = false;
+    };
+  }, [weekStart, ready, store, reloadToken]);
+
+  /* Last week, loaded alongside this one purely to feed the empty-day
+     suggestions. Failure is silent and non-blocking: no previous week simply
+     means no suggestions, which is exactly right for a first-ever week. */
+  useEffect(() => {
+    if (!ready) {
+      setPreviousWeek(null);
+      return;
+    }
+    let active = true;
+    storeRef.current
+      .loadWeek(addDays(weekStart, -7))
+      .then((w) => {
+        if (active) setPreviousWeek(w);
+      })
+      .catch(() => {
+        if (active) setPreviousWeek(null);
+      });
     return () => {
       active = false;
     };
@@ -188,12 +240,30 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     };
   }, [commit, weekStart]);
 
+  /* The same rollover `onShow` does, driven by the clock rather than by a
+     focus event. `onShow` covers the tab you come back to; this covers the one
+     you never leave. Sitting on Sunday's week at 23:59 with the window focused
+     used to mean every edit after midnight was written into the week that had
+     just ended. Its own `useToday` subscription keeps the hook self-contained
+     — the timer is one `setTimeout`, and both copies agree by construction. */
+  const clockToday = useToday();
+  useEffect(() => {
+    const nowWeek = currentWeekStart();
+    if (nowWeek === anchorRef.current) return;
+    const wasSittingOnCurrent = weekStart === anchorRef.current;
+    anchorRef.current = nowWeek;
+    // Only follow the calendar if you hadn't deliberately navigated away.
+    if (wasSittingOnCurrent) setWeekStartRaw(nowWeek);
+  }, [clockToday, weekStart]);
+
   /* ── Mutations ────────────────────────────────────────────────────────── */
 
   const mutate = useCallback(
     (fn: (w: Week) => Week) => {
       const current = weekRef.current;
-      if (!current) return;
+      // `ready` matters as much as the week itself here: see readyRef above.
+      if (!current || !readyRef.current) return;
+      editSeq.current += 1;
       const next = fn(current);
       weekRef.current = next;
       setWeek(next);
@@ -240,6 +310,19 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
       mapDay(dayId, (tasks) => [...tasks, { id, label, done: false }]);
       return id;
     },
+    [mapDay],
+  );
+
+  /** Several at once, as one mutation and therefore one save. */
+  const addTasks = useCallback(
+    (dayId: DayId, labels: string[]) =>
+      mapDay(dayId, (tasks) => [
+        ...tasks,
+        ...labels
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((label) => ({ id: uid(), label, done: false })),
+      ]),
     [mapDay],
   );
 
@@ -304,6 +387,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
 
   return {
     week,
+    previousWeek,
     weekStart,
     knownWeeks,
     loading,
@@ -313,6 +397,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     toggleTask,
     setTaskLabel,
     addTask,
+    addTasks,
     removeTask,
     setMeta,
     clearChecks,

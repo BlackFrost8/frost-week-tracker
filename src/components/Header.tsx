@@ -65,7 +65,7 @@ export function Header({
       type="button"
       onClick={() => onGoToWeek(addDays(weekStart, dir * 7))}
       aria-label={label}
-      className="grid h-7 w-7 place-items-center rounded text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200"
+      className="-m-1.5 grid h-10 w-10 place-items-center rounded text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200"
     >
       <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
         <path
@@ -174,8 +174,13 @@ export function Header({
 
             Previously rendered in cyan-700 at 2.67:1 — a data-loss warning you
             can't read is a functional bug, not a style nit. */}
+        {/* role="alert" because this is the one thing in the header a screen
+            reader has to be told without going looking for it — it is the only
+            signal that work is not being kept. */}
         {sync === 'error' && (
-          <span className="font-mono text-xs text-frost-alert">save failed</span>
+          <span role="alert" className="font-mono text-xs text-frost-alert">
+            save failed
+          </span>
         )}
 
         {/* The picture is the whole control. A name or an address next to it
@@ -190,7 +195,7 @@ export function Header({
             onClick={onOpenAccount}
             aria-label="Account"
             title="Account"
-            className="rounded-full transition-opacity duration-150 hover:opacity-75"
+            className="-m-1.5 grid h-10 w-10 place-items-center rounded-full transition-opacity duration-150 hover:opacity-75"
           >
             <Avatar profile={profile} src={avatar ?? profile.avatarUrl} size={28} />
           </button>

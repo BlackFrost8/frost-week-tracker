@@ -1,12 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { Day } from '../types';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
-import { takePrompts } from '../lib/suggestions';
 import { TaskRow } from './TaskRow';
-
-/** Prompts already handed to a given date this session, so revisiting a day
-    doesn't spend three more from a pool that never refills. */
-const claimed = new Map<string, string[]>();
 
 type Props = {
   day: Day;
@@ -14,7 +9,19 @@ type Props = {
   onToggle: (taskId: string) => void;
   onLabelChange: (taskId: string, label: string) => void;
   onDelete: (taskId: string) => void;
-  onAdd: (label?: string) => string;
+  onAdd: () => string;
+  /**
+   * What this weekday held last week, minus anything already on it this week.
+   *
+   * This replaced a fixed pool of thirty generic prompts that were marked as
+   * seen the moment they rendered. That pool could not win: it ran out, it
+   * burned entries during week-navigation that were never on screen long
+   * enough to read, and "Finish your homework" was never going to be as
+   * useful as the thing you actually wrote last Monday.
+   */
+  suggestions: string[];
+  onUseSuggestion: (label: string) => void;
+  onUseAllSuggestions: (labels: string[]) => void;
 };
 
 /**
@@ -26,40 +33,21 @@ type Props = {
  * The glow still belongs to today and only to today (§2.4): selecting another
  * day gets you the surface without the light.
  */
-export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd }: Props) {
+export function DayCard({
+  day,
+  isToday,
+  onToggle,
+  onLabelChange,
+  onDelete,
+  onAdd,
+  suggestions,
+  onUseSuggestion,
+  onUseAllSuggestions,
+}: Props) {
   const done = completedCount(day);
   const left = leftCount(day);
   const [focusId, setFocusId] = useState<string | null>(null);
-  /** The row a prompt just created — it opens straight into editing. */
-  const [promptId, setPromptId] = useState<string | null>(null);
-
-  /* Prompts are claimed in an effect rather than during render because
-     `takePrompts` marks them as seen, and StrictMode renders twice — which
-     would silently burn two prompts for every one shown.
-
-     `claimed` is keyed by calendar date and lives for the session, so clicking
-     between days and coming back shows the same prompts instead of spending
-     three more each time. Thirty prompts would otherwise be gone in ten
-     glances, and none of them ever come back. */
-  const [prompts, setPrompts] = useState<string[]>([]);
   const isEmpty = day.tasks.length === 0;
-
-  useEffect(() => {
-    if (!isEmpty) {
-      // Prompts belong to the empty state only. They are not re-claimed when a
-      // day is emptied again, so deleting tasks can't farm fresh ones.
-      setPrompts([]);
-      return;
-    }
-    const existing = claimed.get(day.date);
-    if (existing) {
-      setPrompts(existing);
-      return;
-    }
-    const picked = takePrompts(3);
-    claimed.set(day.date, picked);
-    setPrompts(picked);
-  }, [day.date, isEmpty]);
 
   return (
     <section
@@ -99,7 +87,6 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
               key={task.id}
               task={task}
               autoFocus={task.id === focusId}
-              startEditing={task.id === promptId}
               onToggle={() => onToggle(task.id)}
               onLabelChange={(label) => onLabelChange(task.id, label)}
               onDelete={() => onDelete(task.id)}
@@ -107,31 +94,7 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
           ))}
 
           {isEmpty && (
-            <div className="py-2">
-              <p className="text-sm text-frost-text-faint">nothing planned yet</p>
-
-              {/* Greyed on purpose: these must read as prompts rather than as
-                  tasks that are already there. Clicking one writes it into a
-                  real row and leaves the cursor in it, so it is a starting
-                  point to type over, not a choice to accept. */}
-              {prompts.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-                  {prompts.map((text) => (
-                    <button
-                      key={text}
-                      type="button"
-                      onClick={() => setPromptId(onAdd(text))}
-                      className="flex items-center gap-2 text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
-                    >
-                      <span className="font-mono" aria-hidden="true">
-                        +
-                      </span>
-                      {text}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <p className="py-2 text-sm text-frost-text-faint">nothing planned yet</p>
           )}
 
           <button
@@ -142,6 +105,49 @@ export function DayCard({ day, isToday, onToggle, onLabelChange, onDelete, onAdd
             <span className="grid h-4 w-4 place-items-center font-mono">+</span>
             add task
           </button>
+
+          {/* Greyed, so they read as offers rather than as tasks already on the
+              list. They are your own words from this weekday last week, which
+              is why clicking one inserts the text instead of a blank row —
+              there is nothing to clear when the wording is already yours.
+
+              Deliberately NOT inside the empty state. Tied to it, taking one
+              suggestion made the day non-empty and the remaining offers
+              vanished mid-thought, so a Monday that repeats three things from
+              last Monday could only ever give you the first. The list is
+              filtered against what the day already holds, so it shrinks as you
+              use it and disappears once there is nothing left to offer. */}
+          {suggestions.length > 0 && (
+            <div className="mt-6">
+              <p className="text-xs text-frost-text-faint">last {day.label}</p>
+
+              <div className="mt-2 flex flex-col items-start gap-0.5">
+                {suggestions.map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => onUseSuggestion(label)}
+                    className="flex items-center gap-2 py-1 text-left text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
+                  >
+                    <span className="font-mono" aria-hidden="true">
+                      +
+                    </span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {suggestions.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onUseAllSuggestions(suggestions)}
+                  className="mt-1.5 py-1 text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-cyan-300"
+                >
+                  bring all {suggestions.length} forward
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <footer className="frost-divider mt-5 pt-4">

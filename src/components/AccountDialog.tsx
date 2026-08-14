@@ -7,6 +7,7 @@ import {
   signUp,
   type Profile,
 } from '../hooks/useAuth';
+import { useDialog } from '../hooks/useDialog';
 import { fileToAvatar } from '../lib/avatar';
 import { isCloudConfigured } from '../lib/firebase';
 import type { StandingTask } from '../lib/prefs';
@@ -124,7 +125,9 @@ function StandingTasks({
                 type="button"
                 onClick={() => removeAt(i)}
                 aria-label={`Remove ${task.label || 'this task'}`}
-                className="shrink-0 text-frost-text-faint transition-colors duration-150 hover:text-frost-alert"
+                // Padded to a real target: the icon is 10px, which is a fine
+                // thing to look at and an impossible thing to tap.
+                className="-m-2 grid h-9 w-9 shrink-0 place-items-center rounded text-frost-text-faint transition-colors duration-150 hover:text-frost-alert"
               >
                 <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden="true">
                   <path
@@ -362,13 +365,8 @@ export function AccountDialog({
     }
   }, [open]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    if (open) document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // Escape, focus containment and focus restoration all live in the hook.
+  const panelRef = useDialog(open, onClose);
 
   if (!open) return null;
 
@@ -429,7 +427,9 @@ export function AccountDialog({
       aria-label="Account"
     >
       <div
-        className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7"
+        ref={panelRef}
+        tabIndex={-1}
+        className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7 focus:outline-none"
         style={{
           background:
             'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',

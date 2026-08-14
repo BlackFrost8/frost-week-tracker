@@ -71,10 +71,28 @@ function putLocal(base: string, week: Week, dirty: boolean): string {
   return updatedAt;
 }
 
-function markClean(base: string, weekStart: string, updatedAt: string): void {
+/** Unconditional. For the one case that genuinely replaces the local copy. */
+function writeMeta(base: string, weekStart: string, updatedAt: string, dirty: boolean): void {
   const meta = readMeta(base);
-  meta[weekStart] = { updatedAt, dirty: false };
+  meta[weekStart] = { updatedAt, dirty };
   writeJSON(metaKey(base), meta);
+}
+
+/**
+ * Clears the dirty flag only if the edit that just reached the cloud is still
+ * the newest one on the device.
+ *
+ * A push reports success for the snapshot *it* sent. If a newer edit was saved
+ * while that request was in the air, clearing the flag unconditionally marks
+ * the newer edit as safely uploaded when it never left — `flushPending` then
+ * has nothing to retry, and the next load lets the cloud overwrite it. The
+ * timestamp is the identity of the snapshot, so an exact match is the only
+ * safe case to clear on.
+ */
+function markClean(base: string, weekStart: string, updatedAt: string): void {
+  const current = readMeta(base)[weekStart];
+  if (current && current.updatedAt !== updatedAt) return;
+  writeMeta(base, weekStart, updatedAt, false);
 }
 
 function dropLocal(base: string, weekStart: string): void {
@@ -143,16 +161,50 @@ function weeksCol(database: Firestore, uid: string) {
 
 type CloudDoc = Week & { updatedAt?: string };
 
+/**
+ * One in-flight cloud write per week document, queued in issue order.
+ *
+ * `firestore/lite` keeps no local mutation queue — each `setDoc` is a bare
+ * HTTP request — so two saves of the same week can land in either order and
+ * the slower, older one wins. Ticking two boxes four hundred milliseconds
+ * apart on a slow connection is enough: the second tick reaches the server
+ * first, the first tick lands after it, and the cloud ends up without the
+ * second tick while the screen still shows it.
+ *
+ * Keyed per week rather than globally so editing this week never waits on a
+ * retry of some week from March.
+ */
+const writeChains = new Map<string, Promise<unknown>>();
+
+function queueWrite(key: string, run: () => Promise<void>): Promise<void> {
+  const previous = writeChains.get(key) ?? Promise.resolve();
+  // The catch is load-bearing: without it one failed write parks a rejected
+  // promise at the head of the chain and every later write is dropped.
+  const next = previous.catch(() => {}).then(run);
+  writeChains.set(key, next);
+
+  // Shed finished chains, but only if nothing queued behind this one.
+  void next
+    .catch(() => {})
+    .then(() => {
+      if (writeChains.get(key) === next) writeChains.delete(key);
+    });
+
+  return next;
+}
+
 async function pushWeek(uid: string, week: Week, updatedAt: string): Promise<void> {
-  await setDoc(doc(weeksCol(requireDb(), uid), week.weekStart), {
-    weekStart: week.weekStart,
-    focus: week.focus,
-    reward: week.reward,
-    affirmation: week.affirmation,
-    days: week.days,
-    updatedAt,
+  return queueWrite(`${uid}:${week.weekStart}`, async () => {
+    await setDoc(doc(weeksCol(requireDb(), uid), week.weekStart), {
+      weekStart: week.weekStart,
+      focus: week.focus,
+      reward: week.reward,
+      affirmation: week.affirmation,
+      days: week.days,
+      updatedAt,
+    });
+    markClean(mirrorKey(uid), week.weekStart, updatedAt);
   });
-  markClean(mirrorKey(uid), week.weekStart, updatedAt);
 }
 
 export const cloudStore: WeekStore = {
@@ -174,8 +226,6 @@ export const cloudStore: WeekStore = {
   async loadWeek(weekStart) {
     const uid = requireUid();
     const base = mirrorKey(uid);
-    const localRaw = readWeeks(base)[weekStart];
-    const localMeta = readMeta(base)[weekStart];
 
     let cloudRaw: CloudDoc | null = null;
     try {
@@ -184,9 +234,21 @@ export const cloudStore: WeekStore = {
     } catch (e) {
       // Network down. Serving the mirror is strictly better than an error
       // screen; the header's sync state is what reports the connection.
-      if (localRaw) return normalizeWeek(localRaw, weekStart);
+      const offlineRaw = readWeeks(base)[weekStart];
+      if (offlineRaw) return normalizeWeek(offlineRaw, weekStart);
       throw e;
     }
+
+    /* Read the local side AFTER the round trip, never before it.
+       The whole job below is to decide whether the device or the cloud holds
+       the newer copy, and a snapshot taken before the await is stale by
+       however long the network took — a second on a school connection. An
+       edit made during that window is precisely the case this decision must
+       not get wrong, and reading it early got it wrong in the most visible
+       way possible: tick a box as the tab regains focus, and the cloud's
+       older copy wins and the box un-ticks itself under the cursor. */
+    const localRaw = readWeeks(base)[weekStart];
+    const localMeta = readMeta(base)[weekStart];
 
     // Only on this device: push it up, then use it.
     if (!cloudRaw) {
@@ -214,11 +276,14 @@ export const cloudStore: WeekStore = {
       return week;
     }
 
+    // Adopting the cloud copy wholesale, so the flag is set outright rather
+    // than through the guarded `markClean` — there is no local edit left to
+    // protect at this point, the line above just established that.
     const week = normalizeWeek(cloudRaw, weekStart);
     const weeks = readWeeks(base);
     weeks[weekStart] = week;
     writeJSON(base, weeks);
-    markClean(base, weekStart, cloudAt || new Date().toISOString());
+    writeMeta(base, weekStart, cloudAt || new Date().toISOString(), false);
     return week;
   },
 
@@ -247,17 +312,20 @@ export async function flushPending(): Promise<number> {
   if (!uid || !db) return 0;
 
   const base = mirrorKey(uid);
-  const meta = readMeta(base);
-  const stale = Object.keys(meta).filter((ws) => meta[ws]?.dirty);
+  const stale = Object.keys(readMeta(base)).filter((ws) => readMeta(base)[ws]?.dirty);
   if (stale.length === 0) return 0;
 
-  const weeks = readWeeks(base);
   let pushed = 0;
   for (const weekStart of stale) {
-    const raw = weeks[weekStart];
-    if (!raw) continue;
+    /* Re-read per iteration, not once before the loop. Each push below is an
+       await, and the user is still typing during it — a snapshot taken up
+       front would upload the pre-edit body and then stamp the newer edit as
+       clean, which loses it twice over. */
+    const raw = readWeeks(base)[weekStart];
+    const entry = readMeta(base)[weekStart];
+    if (!raw || !entry?.dirty) continue;
     try {
-      await pushWeek(uid, normalizeWeek(raw, weekStart), meta[weekStart].updatedAt);
+      await pushWeek(uid, normalizeWeek(raw, weekStart), entry.updatedAt);
       pushed += 1;
     } catch {
       break; // Still offline — leave the rest for the next attempt.

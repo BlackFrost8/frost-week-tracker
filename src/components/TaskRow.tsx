@@ -10,13 +10,6 @@ type Props = {
   dense?: boolean;
   /** Set on the row `+ add task` just created, so it is typable immediately. */
   autoFocus?: boolean;
-  /**
-   * Opens the row in its editing state on mount. Used by the empty-day
-   * prompts, which arrive with their text already filled in: the point of
-   * clicking one is to keep typing, so it must not land as a finished task
-   * that has to be clicked a second time to change.
-   */
-  startEditing?: boolean;
 };
 
 export function TaskRow({
@@ -26,10 +19,9 @@ export function TaskRow({
   onDelete,
   dense = false,
   autoFocus = false,
-  startEditing = false,
 }: Props) {
   const isBlank = task.label.trim() === '';
-  const [editing, setEditing] = useState(startEditing);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.label);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -153,7 +145,14 @@ export function TaskRow({
         {task.label}
       </span>
 
-      <span className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+      {/* `frost-row-tools` rather than a bare `opacity-0`: transparent is not
+          gone. Without the matching `pointer-events: none` these buttons kept
+          their hit boxes, so on a phone — where hover never fires and so they
+          never appear — there was an invisible, unconfirmed delete sitting at
+          the right edge of every task row. The same rule makes them permanently
+          visible wherever hovering isn't possible, since a control revealed by
+          hover alone is a control a touch user cannot find at all. */}
+      <span className="frost-row-tools flex shrink-0 items-center gap-1 transition-opacity duration-150">
         <button
           type="button"
           onClick={(e) => {

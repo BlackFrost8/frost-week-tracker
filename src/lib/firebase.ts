@@ -15,17 +15,23 @@ import { firebaseConfig } from './firebase-config';
  */
 const env = import.meta.env;
 
+/* `||`, not `??`. An empty string is not nullish, so `??` treated a blank
+   environment variable as a deliberate value and kept it — meaning anyone who
+   forked this and copied `.env.example` verbatim (every key present, every
+   value empty) got six empty strings, silently lost sign-in, and had the app
+   quietly fall back to this-device-only with nothing explaining why. An unset
+   value and a blank value mean the same thing here: use the committed config. */
 const resolved = {
-  apiKey: (env.VITE_FIREBASE_API_KEY ?? firebaseConfig.apiKey ?? '').trim(),
-  authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN ?? firebaseConfig.authDomain ?? '').trim(),
-  projectId: (env.VITE_FIREBASE_PROJECT_ID ?? firebaseConfig.projectId ?? '').trim(),
-  storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET ?? firebaseConfig.storageBucket ?? '').trim(),
+  apiKey: (env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || '').trim(),
+  authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || '').trim(),
+  projectId: (env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || '').trim(),
+  storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || '').trim(),
   messagingSenderId: (
-    env.VITE_FIREBASE_MESSAGING_SENDER_ID ??
-    firebaseConfig.messagingSenderId ??
+    env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+    firebaseConfig.messagingSenderId ||
     ''
   ).trim(),
-  appId: (env.VITE_FIREBASE_APP_ID ?? firebaseConfig.appId ?? '').trim(),
+  appId: (env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || '').trim(),
 };
 
 const configured = resolved.apiKey !== '' && resolved.projectId !== '';

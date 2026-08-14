@@ -7,7 +7,9 @@ import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek } from './hooks/useWeek';
 import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
-import { DAY_IDS, completedCount, todayISO } from './lib/week';
+import { DAY_IDS, completedCount, weekOverallPct } from './lib/week';
+import { useToday } from './hooks/useToday';
+import { paintFavicon } from './lib/favicon';
 import { AmbientBackground } from './components/AmbientBackground';
 import { Header } from './components/Header';
 import { IntentPanel } from './components/IntentPanel';
@@ -52,6 +54,7 @@ export default function App() {
 
   const {
     week,
+    previousWeek,
     weekStart,
     knownWeeks,
     sync,
@@ -60,6 +63,7 @@ export default function App() {
     toggleTask,
     setTaskLabel,
     addTask,
+    addTasks,
     removeTask,
     setMeta,
     clearChecks,
@@ -100,7 +104,9 @@ export default function App() {
     [updatePrefs],
   );
 
-  const today = todayISO();
+  // Not `todayISO()` during render: that is right only until midnight, and a
+  // tab left focused overnight never re-rendered to notice. See useToday.
+  const today = useToday();
   const todayDay = week?.days.find((d) => d.date === today) ?? null;
 
   /**
@@ -115,14 +121,48 @@ export default function App() {
    * marked as seen without anybody having seen them.
    */
   const [selected, setSelected] = useState<DayId>(() => DAY_IDS[(new Date().getDay() + 6) % 7]);
+
+  /* Depend on the day's ID and a boolean, never on `week` or `todayDay`
+     themselves.
+
+     Every edit rebuilds the week — `mutate` returns a new object — and
+     `todayDay` is a fresh `.find()` result on top of that, so both change
+     identity on each keystroke while meaning exactly the same thing. Naming
+     them here re-ran this effect after every edit and reset the selection,
+     which is why adding a task to any day other than today threw you back to
+     today mid-sentence. The ID is a string: it only changes when the day
+     genuinely does, including over midnight. */
+  const todayId = todayDay?.id ?? null;
+  const weekLoaded = week !== null;
+
   useEffect(() => {
-    // Not while the week is still loading. `todayDay` is null until it lands,
+    // Not while the week is still loading. `todayId` is null until it lands,
     // so an unguarded run reads that as "this week has no today" and falls
     // back to Monday — overwriting the correct seed above, and then correcting
     // itself once the week arrives. The card in between is a real render.
-    if (!week) return;
-    setSelected(todayDay ? todayDay.id : 'mon');
-  }, [week, weekStart, todayDay]);
+    if (!weekLoaded) return;
+    setSelected(todayId ?? 'mon');
+  }, [weekLoaded, weekStart, todayId]);
+
+  /* The tab carries the app's identity, and the app's identity is whatever the
+     theme is called — including a name typed by hand in the advanced picker.
+     A second, fixed title sitting in the tab was just a older name for the
+     same thing. */
+  const tabName = theme.name.trim();
+  useEffect(() => {
+    document.title = tabName || 'Week tracker';
+  }, [tabName]);
+
+  /* The ring in the tab is the same number as the ring on the page. Redrawn
+     from the week rather than stored, so it cannot drift from the checkboxes,
+     and in the theme's own accent so the tab matches the screen.
+
+     Deliberately outside the `if (!week)` early return below — hooks cannot be
+     called conditionally, and the loading state still wants a sane icon. */
+  const weekPct = week ? weekOverallPct(week) : 0;
+  useEffect(() => {
+    paintFavicon(weekPct, theme.spec.accent, theme.spec.primary);
+  }, [weekPct, theme.spec.accent, theme.spec.primary]);
 
   const handleSignOut = async () => {
     await flush();
@@ -148,12 +188,26 @@ export default function App() {
   const selectedDay = week.days.find((d) => d.id === selected) ?? week.days[0];
   const doneToday = todayDay ? completedCount(todayDay) : 0;
 
+  /* What this weekday held last week, minus whatever is already on it this
+     week — so the list shrinks as you use it and disappears once you've taken
+     everything worth taking. Capped at six: past that it stops being a nudge
+     and becomes a second list to read. */
+  const lastWeekDay = previousWeek?.days.find((d) => d.id === selectedDay.id) ?? null;
+  const alreadyHere = new Set(selectedDay.tasks.map((t) => t.label.trim().toLowerCase()));
+  const suggestions = (lastWeekDay?.tasks ?? [])
+    .map((t) => t.label.trim())
+    .filter((label) => label && !alreadyHere.has(label.toLowerCase()))
+    .slice(0, 6);
+
   const handlers = {
     onToggle: (taskId: string) => toggleTask(selectedDay.id, taskId),
     onLabelChange: (taskId: string, label: string) =>
       setTaskLabel(selectedDay.id, taskId, label),
     onDelete: (taskId: string) => removeTask(selectedDay.id, taskId),
-    onAdd: (label?: string) => addTask(selectedDay.id, label),
+    onAdd: () => addTask(selectedDay.id),
+    suggestions,
+    onUseSuggestion: (label: string) => void addTask(selectedDay.id, label),
+    onUseAllSuggestions: (labels: string[]) => addTasks(selectedDay.id, labels),
   };
 
   return (

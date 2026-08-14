@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDialog } from '../hooks/useDialog';
 
 /**
  * What the app can do, in one place.
@@ -27,7 +28,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
     title: 'Tasks',
     items: [
       'Add a task with "+ add task", then type. Enter saves it, Escape throws it away.',
-      'An empty day offers a few greyed prompts — click one to start from it.',
+      'An empty day offers what you did on it last week, in grey. Click one to bring it forward.',
       'Click anywhere on a row to tick it off. Hover a row to edit or delete it.',
       'Clearing a task’s text deletes the row, so a half-added task never gets stuck.',
     ],
@@ -97,13 +98,10 @@ function InfoIcon() {
 export function InfoDialog() {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    if (open) document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
+  // Stable identity: the hook restores focus in its cleanup, so a new closure
+  // each render would tear down and re-run that on every parent render.
+  const close = useCallback(() => setOpen(false), []);
+  const panelRef = useDialog(open, close);
 
   return (
     <>
@@ -139,7 +137,9 @@ export function InfoDialog() {
             aria-label="What you can do"
           >
             <div
-              className="frost-rise my-auto w-full max-w-lg rounded-2xl p-7"
+              ref={panelRef}
+              tabIndex={-1}
+              className="frost-rise my-auto w-full max-w-lg rounded-2xl p-7 focus:outline-none"
               style={{
                 background:
                   'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',
