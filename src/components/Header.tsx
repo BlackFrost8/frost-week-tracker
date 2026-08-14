@@ -63,7 +63,7 @@ export function Header({
       type="button"
       onClick={() => onGoToWeek(addDays(weekStart, dir * 7))}
       aria-label={label}
-      className="grid h-7 w-7 place-items-center rounded text-frost-text-faint transition-colors duration-150 hover:text-frost-text"
+      className="grid h-7 w-7 place-items-center rounded text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200"
     >
       <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
         <path
@@ -87,11 +87,11 @@ export function Header({
       {/* `uppercase` sits on the button, not the h1: a button does not inherit
           text-transform, so on the h1 it silently did nothing. Keeping it on
           exactly one element also keeps the §6 uppercase count at 1. */}
-      <h1 className="font-wordmark text-base text-frost-text">
+      <h1 className="font-wordmark text-base">
         <button
           type="button"
           onClick={onOpenTheme}
-          className="uppercase transition-colors duration-150 hover:text-frost-cyan-200"
+          className="frost-wordmark uppercase"
           aria-haspopup="dialog"
           title="Change the theme"
           // Michroma is already a wide face, so the old 0.42em would push a
@@ -114,7 +114,7 @@ export function Header({
             onClick={() => setListOpen((v) => !v)}
             aria-expanded={listOpen}
             aria-haspopup="listbox"
-            className="min-w-[9.5rem] px-1 text-center font-mono text-sm text-frost-text transition-colors duration-150 hover:text-frost-cyan-300"
+            className="min-w-[9.5rem] px-1 text-center font-mono text-sm text-frost-cyan-100 transition-colors duration-150 hover:text-frost-cyan-050"
           >
             {weekRange(weekStart)}
           </button>
@@ -151,7 +151,7 @@ export function Header({
           <button
             type="button"
             onClick={() => onGoToWeek(thisWeek)}
-            className="text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-text-dim"
+            className="text-sm text-frost-cyan-500 transition-colors duration-150 hover:text-frost-cyan-200"
           >
             today
           </button>
@@ -159,7 +159,7 @@ export function Header({
 
         {/* Sync is a real feature, so it gets a real (tiny) affordance — and
             says nothing at all when there is nothing to report (§2.4). */}
-        {sync === 'saving' && <span className="font-mono text-xs text-frost-text-faint">saving</span>}
+        {sync === 'saving' && <span className="font-mono text-xs text-frost-cyan-500">saving</span>}
         {/* A data-loss warning was previously rendered in cyan-700 at 2.67:1 —
             a functional bug, not a style nit. */}
         {sync === 'error' && (
@@ -177,7 +177,7 @@ export function Header({
             title={profile.email ?? undefined}
           >
             <Avatar profile={profile} size={26} />
-            <span className="max-w-[10rem] truncate text-sm text-frost-text-dim transition-colors duration-150 group-hover:text-frost-text">
+            <span className="max-w-[10rem] truncate text-sm text-frost-cyan-300 transition-colors duration-150 group-hover:text-frost-cyan-100">
               {profile.name?.split(' ')[0] ?? profile.email}
             </span>
           </button>
@@ -185,7 +185,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenAccount}
-            className="text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-cyan-300"
+            className="text-sm text-frost-cyan-300 transition-colors duration-150 hover:text-frost-cyan-100"
           >
             sign in
           </button>

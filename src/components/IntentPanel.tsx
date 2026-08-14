@@ -77,7 +77,7 @@ export function IntentPanel({ week, onSave, onClearChecks }: Props) {
 
         return (
           <div key={f.key} className="flex flex-col gap-2">
-            <span className="text-xs text-frost-text-faint">{f.label}</span>
+            <span className="text-xs text-frost-cyan-500">{f.label}</span>
 
             {isEditing ? (
               <input
@@ -99,8 +99,16 @@ export function IntentPanel({ week, onSave, onClearChecks }: Props) {
                 onClick={() => begin(f.key)}
                 aria-label={`Edit ${f.label}`}
                 className="text-left text-lg leading-snug transition-colors duration-150"
+                // Colour carries one meaning here and only one: grey is a
+                // prompt you haven't answered, accent is your own words. All
+                // three fields share the same pair, so the panel reads as
+                // three instances of the same question rather than as a
+                // ranking — an earlier gradient down the ramp implied an
+                // order that doesn't exist.
                 style={{
-                  color: value ? 'var(--color-frost-text)' : 'var(--color-frost-text-faint)',
+                  color: value
+                    ? 'var(--color-frost-cyan-100)'
+                    : 'var(--color-frost-text-faint)',
                 }}
               >
                 {value || f.placeholder}
@@ -113,7 +121,7 @@ export function IntentPanel({ week, onSave, onClearChecks }: Props) {
       <button
         type="button"
         onClick={clear}
-        className="self-start text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-alert"
+        className="self-start text-sm text-frost-cyan-500 transition-colors duration-150 hover:text-frost-alert"
       >
         {confirming ? 'clear all checks?' : 'clear checks'}
       </button>
