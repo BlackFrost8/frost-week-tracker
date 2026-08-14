@@ -457,6 +457,35 @@ body {
   border-top: 1px solid var(--frost-hairline);
 }
 
+/* ── Row tools (edit / delete) ───────────────────────────────────────────────
+   Hidden until the row is hovered or holds focus, so a list of tasks reads as
+   text rather than as a grid of buttons.
+
+   `pointer-events` is the load-bearing half. `opacity: 0` alone leaves the
+   buttons fully hit-testable, which on a touch screen means an invisible
+   delete with no confirmation on every row — the worst possible combination:
+   undiscoverable when you want it, and waiting for a mis-tap when you don't.
+
+   Where hovering isn't possible there is no reveal gesture to wait for, so
+   they simply stay visible. `any-hover` rather than `hover` so a phone with a
+   keyboard or a stylus attached still gets the quieter treatment. */
+.frost-row-tools {
+  opacity: 1;
+}
+
+@media (any-hover: hover) {
+  .frost-row-tools {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .group:hover .frost-row-tools,
+  .frost-row-tools:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* ── Shell ───────────────────────────────────────────────────────────────────
    The page gutter and max width live here rather than in utilities because
    they are the single most load-bearing measurement in the layout: at 1152px

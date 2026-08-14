@@ -7,7 +7,8 @@ import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek } from './hooks/useWeek';
 import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
-import { DAY_IDS, completedCount, todayISO, weekOverallPct } from './lib/week';
+import { DAY_IDS, completedCount, weekOverallPct } from './lib/week';
+import { useToday } from './hooks/useToday';
 import { paintFavicon } from './lib/favicon';
 import { AmbientBackground } from './components/AmbientBackground';
 import { Header } from './components/Header';
@@ -53,6 +54,7 @@ export default function App() {
 
   const {
     week,
+    previousWeek,
     weekStart,
     knownWeeks,
     sync,
@@ -61,6 +63,7 @@ export default function App() {
     toggleTask,
     setTaskLabel,
     addTask,
+    addTasks,
     removeTask,
     setMeta,
     clearChecks,
@@ -101,7 +104,9 @@ export default function App() {
     [updatePrefs],
   );
 
-  const today = todayISO();
+  // Not `todayISO()` during render: that is right only until midnight, and a
+  // tab left focused overnight never re-rendered to notice. See useToday.
+  const today = useToday();
   const todayDay = week?.days.find((d) => d.date === today) ?? null;
 
   /**
@@ -183,12 +188,26 @@ export default function App() {
   const selectedDay = week.days.find((d) => d.id === selected) ?? week.days[0];
   const doneToday = todayDay ? completedCount(todayDay) : 0;
 
+  /* What this weekday held last week, minus whatever is already on it this
+     week — so the list shrinks as you use it and disappears once you've taken
+     everything worth taking. Capped at six: past that it stops being a nudge
+     and becomes a second list to read. */
+  const lastWeekDay = previousWeek?.days.find((d) => d.id === selectedDay.id) ?? null;
+  const alreadyHere = new Set(selectedDay.tasks.map((t) => t.label.trim().toLowerCase()));
+  const suggestions = (lastWeekDay?.tasks ?? [])
+    .map((t) => t.label.trim())
+    .filter((label) => label && !alreadyHere.has(label.toLowerCase()))
+    .slice(0, 6);
+
   const handlers = {
     onToggle: (taskId: string) => toggleTask(selectedDay.id, taskId),
     onLabelChange: (taskId: string, label: string) =>
       setTaskLabel(selectedDay.id, taskId, label),
     onDelete: (taskId: string) => removeTask(selectedDay.id, taskId),
     onAdd: () => addTask(selectedDay.id),
+    suggestions,
+    onUseSuggestion: (label: string) => void addTask(selectedDay.id, label),
+    onUseAllSuggestions: (labels: string[]) => addTasks(selectedDay.id, labels),
   };
 
   return (

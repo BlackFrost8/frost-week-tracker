@@ -139,6 +139,20 @@ export function deriveTheme(spec: ThemeSpec): Record<string, string> {
   // reads muddy and white on blue is what every real UI does.
   const onAccent = contrast(accent, BLACK) >= contrast(accent, WHITE) * 1.2 ? BLACK : WHITE;
 
+  /* The 300 and 500 tiers are TEXT, not decoration: the intent-panel labels,
+     the week arrows, the "today" jump-back, the clock's controls.
+
+     Mixing them toward the canvas dims them, which is what you want — but
+     "dimmer" only means "darker" when the canvas is dark. On a pale theme the
+     same mix walks a mid-blue *up* into the background: the Office preset
+     measured 2.20:1 and 3.18:1 against its own canvas, well under the 4.5
+     needed to read. They mix away from the canvas when it is light, which is
+     the only direction that dims a colour against white.
+
+     The 700/900/950 tiers are deliberately left alone — those are fills and
+     ring tracks, and they have to stay close to the canvas to be quiet. */
+  const ink = light ? far : base;
+
   return {
     '--color-frost-black': rgbToHex(base),
     '--color-frost-void': rgbToHex(mix(base, far, 0.02)),
@@ -148,8 +162,8 @@ export function deriveTheme(spec: ThemeSpec): Record<string, string> {
     '--color-frost-cyan-050': rgbToHex(mix(accent, light ? BLACK : WHITE, 0.7)),
     '--color-frost-cyan-100': rgbToHex(mix(accent, light ? BLACK : WHITE, 0.16)),
     '--color-frost-cyan-200': rgbToHex(accent),
-    '--color-frost-cyan-300': rgbToHex(mix(accent, base, 0.18)),
-    '--color-frost-cyan-500': rgbToHex(mix(accent, base, 0.42)),
+    '--color-frost-cyan-300': rgbToHex(mix(accent, ink, 0.18)),
+    '--color-frost-cyan-500': rgbToHex(mix(accent, ink, 0.42)),
     '--color-frost-cyan-700': rgbToHex(mix(accent, base, 0.68)),
     '--color-frost-cyan-900': rgbToHex(mix(accent, base, 0.86)),
     '--color-frost-cyan-950': rgbToHex(mix(accent, base, 0.96)),
@@ -175,6 +189,12 @@ export function applyTheme(spec: ThemeSpec): void {
   const vars = deriveTheme(spec);
   for (const [key, value] of Object.entries(vars)) root.style.setProperty(key, value);
   root.style.colorScheme = vars['--frost-scheme'];
+
+  // The browser's own chrome on a phone. Hardcoded black in the HTML, which
+  // put a black bar above a near-white page on the light presets.
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', vars['--color-frost-black']);
 }
 
 /* ── Persistence ───────────────────────────────────────────────────────────

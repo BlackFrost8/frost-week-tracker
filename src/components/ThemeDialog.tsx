@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { MAX_THEME_NAME, PRESETS } from '../lib/theme';
+import { useDialog } from '../hooks/useDialog';
 import type { useTheme } from '../hooks/useTheme';
 
 /** The hook lives in App, not here: the wordmark in the header renders the
@@ -27,13 +28,8 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
   const { presetId, name, spec, selectPreset, setCustom, setName, reset } = theme;
   const [advanced, setAdvanced] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    if (open) document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // Escape, focus containment and focus restoration all live in the hook.
+  const panelRef = useDialog(open, onClose);
 
   if (!open) return null;
 
@@ -66,7 +62,11 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center p-5"
+      // `overflow-y-auto` + `my-auto` on the panel: with "advanced" open, or
+      // with a phone keyboard covering half the screen while editing a hex
+      // value, this dialog is taller than the viewport and "done" sat below
+      // the fold with no way to reach it.
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-5"
       style={{ backgroundColor: 'rgb(var(--frost-base-rgb) / 0.72)', backdropFilter: 'blur(6px)' }}
       onClick={onClose}
       role="dialog"
@@ -74,7 +74,9 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
       aria-label="Theme"
     >
       <div
-        className="frost-rise w-full max-w-sm rounded-2xl p-7"
+        ref={panelRef}
+        tabIndex={-1}
+        className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7 focus:outline-none"
         style={{
           background:
             'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',
