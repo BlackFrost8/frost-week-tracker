@@ -104,6 +104,14 @@ export default function App() {
     [updatePrefs],
   );
 
+  /* Stable, because the dialogs manage focus and a changing handler identity
+     is a reason to re-run that. `useDialog` no longer depends on these, so
+     this is belt-and-braces rather than the fix — but an inline arrow here is
+     precisely what made the theme-name box unusable, and there is no reason
+     to leave the trap armed for the next effect that needs one of these. */
+  const closeAccount = useCallback(() => setAccountOpen(false), []);
+  const closeTheme = useCallback(() => setThemeOpen(false), []);
+
   // Not `todayISO()` during render: that is right only until midnight, and a
   // tab left focused overnight never re-rendered to notice. See useToday.
   const today = useToday();
@@ -288,7 +296,7 @@ export default function App() {
 
       <AccountDialog
         open={accountOpen}
-        onClose={() => setAccountOpen(false)}
+        onClose={closeAccount}
         profile={profile}
         onSignOut={handleSignOut}
         defaultTasks={prefs.defaultTasks}
@@ -298,7 +306,7 @@ export default function App() {
         onSaveAvatar={saveAvatar}
       />
 
-      <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} />
+      <ThemeDialog open={themeOpen} onClose={closeTheme} theme={theme} />
 
       {/* Owns its own open state — nothing else in the app needs to know, and
           the button is part of the feature rather than a separate control. */}

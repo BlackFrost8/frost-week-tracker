@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MAX_THEME_NAME, PRESETS } from '../lib/theme';
 import { useDialog } from '../hooks/useDialog';
 import type { useTheme } from '../hooks/useTheme';
@@ -24,25 +24,53 @@ function Swatch({ primary, accent, active }: { primary: string; accent: string; 
   );
 }
 
-export function ThemeDialog({ open, onClose, theme }: Props) {
-  const { presetId, name, spec, selectPreset, setCustom, setName, reset } = theme;
-  const [advanced, setAdvanced] = useState(false);
+/**
+ * A colour as a hex box and a native picker.
+ *
+ * The text box keeps its own draft. It used to render the committed colour
+ * directly while only committing on a complete six-digit value — which meant
+ * every partial keystroke was rejected and React put the old colour straight
+ * back. "#7", "#7C", "#7CF" are all invalid on the way to a valid one, so the
+ * field could not be typed into at all; the picker was the only way in.
+ *
+ * The draft is what you see, the commit happens once the text means a colour,
+ * and an abandoned half-edit is tidied up on blur.
+ */
+function ColourField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const [draft, setDraft] = useState(value.toUpperCase());
 
-  // Escape, focus containment and focus restoration all live in the hook.
-  const panelRef = useDialog(open, onClose);
+  // Follow the colour when it changes from somewhere else — a preset, or the
+  // picker beside this box — but never clobber a draft that already means the
+  // same colour, which is what an in-progress commit looks like.
+  useEffect(() => {
+    setDraft((d) =>
+      d.trim().replace(/^#/, '').toLowerCase() === value.replace(/^#/, '').toLowerCase()
+        ? d
+        : value.toUpperCase(),
+    );
+  }, [value]);
 
-  if (!open) return null;
-
-  const colourField = (label: string, value: string, onChange: (hex: string) => void) => (
+  return (
     <label className="flex items-center justify-between gap-4">
       <span className="text-sm text-frost-text-dim">{label}</span>
       <span className="flex items-center gap-3">
         <input
-          value={value.toUpperCase()}
+          value={draft}
           onChange={(e) => {
-            const v = e.target.value.trim();
-            if (/^#?[0-9a-fA-F]{6}$/.test(v)) onChange(v.startsWith('#') ? v : `#${v}`);
+            setDraft(e.target.value);
+            const hex = e.target.value.trim().replace(/^#/, '');
+            if (/^[0-9a-fA-F]{6}$/.test(hex)) onChange(`#${hex}`);
           }}
+          onBlur={() => setDraft(value.toUpperCase())}
+          spellCheck={false}
           aria-label={`${label} hex value`}
           className="frost-field w-[8ch] text-right font-mono text-xs"
         />
@@ -58,6 +86,20 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
         />
       </span>
     </label>
+  );
+}
+
+export function ThemeDialog({ open, onClose, theme }: Props) {
+  const { presetId, name, spec, selectPreset, setCustom, setName, reset } = theme;
+  const [advanced, setAdvanced] = useState(false);
+
+  // Escape, focus containment and focus restoration all live in the hook.
+  const panelRef = useDialog(open, onClose);
+
+  if (!open) return null;
+
+  const colourField = (label: string, value: string, onChange: (hex: string) => void) => (
+    <ColourField label={label} value={value} onChange={onChange} />
   );
 
   return (

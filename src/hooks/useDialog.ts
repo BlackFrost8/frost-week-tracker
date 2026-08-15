@@ -15,6 +15,20 @@ import { useEffect, useRef } from 'react';
 export function useDialog(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  /* `onClose` is held in a ref and deliberately NOT a dependency below.
+     Callers pass an inline arrow, so its identity changes on every render of
+     the parent — and this effect moves focus on setup and restores it on
+     cleanup. Naming it as a dependency meant any state change while the dialog
+     was open tore the effect down, threw focus out of whatever field you were
+     in, and re-entered on the panel. Typing your theme's name did exactly
+     that: the name is app state, so every keystroke re-rendered App and
+     bounced the caret out of the box. One letter per click.
+
+     The effect must run once per open and clean up once per close. That is
+     what `[open]` alone expresses. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
 
@@ -36,7 +50,7 @@ export function useDialog(open: boolean, onClose: () => void) {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -75,7 +89,7 @@ export function useDialog(open: boolean, onClose: () => void) {
         opener?.focus?.();
       }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return panelRef;
 }
