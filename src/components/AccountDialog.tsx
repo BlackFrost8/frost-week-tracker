@@ -66,20 +66,53 @@ function StandingTasks({
      The dialog unmounts this component when it closes, so the initial state
      above is the only sync that's needed. */
 
+  /* The newest draft, readable from the unmount effect below — which closes
+     over the first render's `draft` and would otherwise save a stale one. */
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  /* True from the moment an edit arms the timer until that save actually goes
+     out. The timer handle cannot answer this on its own: the cleanup below
+     cancels it on unmount as well as on re-arm, and a cancelled timer and a
+     fired one look identical afterwards. */
+  const unsaved = useRef(false);
+
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;
       return;
     }
     if (timer.current) clearTimeout(timer.current);
+    unsaved.current = true;
     timer.current = setTimeout(() => {
       timer.current = null;
+      unsaved.current = false;
       onSaveRef.current(clean(draft));
     }, 600);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
   }, [draft]);
+
+  /* Closing the dialog unmounts this component, and the cleanup above only
+     *cancels* the pending save — it never ran it. So typing a standing task
+     and then clicking "done", pressing Escape, or tapping the backdrop within
+     600ms silently threw the edit away, with nothing written locally or to the
+     cloud and no indication that anything had been lost. Typing and then
+     immediately clicking the button directly below it is the ordinary way to
+     use this dialog, so the window was not a narrow one.
+
+     Keyed off `unsaved` rather than the timer, so it does not depend on which
+     cleanup React happens to run first, and so a save that already fired is
+     never repeated. */
+  useEffect(
+    () => () => {
+      if (!unsaved.current) return;
+      unsaved.current = false;
+      onSaveRef.current(clean(draftRef.current));
+    },
+    [],
+  );
 
   const setAt = (i: number, label: string) =>
     setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, label } : t)));

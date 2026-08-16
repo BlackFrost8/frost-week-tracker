@@ -105,6 +105,24 @@ function dropLocal(base: string, weekStart: string): void {
   writeJSON(metaKey(base), meta);
 }
 
+/**
+ * Takes the cloud copy as authoritative for this week and records it as clean.
+ *
+ * Shared by the two places that reach that conclusion — `loadWeek` and
+ * `flushPending` — so the "cloud wins" branch cannot drift into two subtly
+ * different behaviours. The flag is written outright rather than through the
+ * guarded `markClean`: both callers establish first that there is no local
+ * edit left worth protecting.
+ */
+function adoptCloud(base: string, weekStart: string, cloudRaw: CloudDoc): Week {
+  const week = normalizeWeek(cloudRaw, weekStart);
+  const weeks = readWeeks(base);
+  weeks[weekStart] = week;
+  writeJSON(base, weeks);
+  writeMeta(base, weekStart, cloudRaw.updatedAt || new Date().toISOString(), false);
+  return week;
+}
+
 /* ── Local ─────────────────────────────────────────────────────────────── */
 
 export const localStore: WeekStore = {
@@ -276,15 +294,9 @@ export const cloudStore: WeekStore = {
       return week;
     }
 
-    // Adopting the cloud copy wholesale, so the flag is set outright rather
-    // than through the guarded `markClean` — there is no local edit left to
+    // Adopting the cloud copy wholesale — there is no local edit left to
     // protect at this point, the line above just established that.
-    const week = normalizeWeek(cloudRaw, weekStart);
-    const weeks = readWeeks(base);
-    weeks[weekStart] = week;
-    writeJSON(base, weeks);
-    writeMeta(base, weekStart, cloudAt || new Date().toISOString(), false);
-    return week;
+    return adoptCloud(base, weekStart, cloudRaw);
   },
 
   async saveWeek(week) {
@@ -317,13 +329,40 @@ export async function flushPending(): Promise<number> {
 
   let pushed = 0;
   for (const weekStart of stale) {
-    /* Re-read per iteration, not once before the loop. Each push below is an
-       await, and the user is still typing during it — a snapshot taken up
-       front would upload the pre-edit body and then stamp the newer edit as
+    /* Ask what the cloud holds before assuming this device is ahead.
+       This used to push every dirty week unconditionally, and it runs on every
+       focus ahead of the reload — so the one function that never compared got
+       the last word over the one that does. Edit a week on the laptop while
+       its connection is down, edit the same week on the phone, then bring the
+       laptop back: the laptop uploaded its older copy over the phone's work,
+       `markClean` cleared the flag, and the reload pulled the overwrite down
+       onto every device. Nothing reported an error, because nothing failed. */
+    let cloudRaw: CloudDoc | null;
+    try {
+      const snap = await getDoc(doc(weeksCol(requireDb(), uid), weekStart));
+      cloudRaw = snap.exists() ? (snap.data() as CloudDoc) : null;
+    } catch {
+      break; // Still offline — leave the rest for the next attempt.
+    }
+
+    /* Re-read per iteration and AFTER the round trip, never once before the
+       loop. Each await above is time the user spends typing — a snapshot taken
+       up front would upload the pre-edit body and then stamp the newer edit as
        clean, which loses it twice over. */
     const raw = readWeeks(base)[weekStart];
     const entry = readMeta(base)[weekStart];
     if (!raw || !entry?.dirty) continue;
+
+    /* The same rule `loadWeek` applies, and deliberately the same direction:
+       an unsent local edit only wins if it is strictly newer than the cloud
+       copy. Otherwise another device wrote something this one has not seen,
+       and that copy is adopted here rather than being overwritten — which also
+       clears the dirty flag, so the week stops being retried forever. */
+    if (cloudRaw && !(entry.updatedAt > (cloudRaw.updatedAt ?? ''))) {
+      adoptCloud(base, weekStart, cloudRaw);
+      continue;
+    }
+
     try {
       await pushWeek(uid, normalizeWeek(raw, weekStart), entry.updatedAt);
       pushed += 1;
@@ -352,6 +391,24 @@ export function hasPendingWrites(): boolean {
     used to silently skip its migration, because the flag was global. */
 const migratedFlag = (uid: string) => `frost-week-tracker:migrated:${uid}`;
 
+/**
+ * Forgets the signed-out blob entirely.
+ *
+ * `ANON_KEY` is one shared bucket with no owner, and migration used to read it
+ * without ever emptying it. On the school Chromebook that is the whole bug:
+ * whoever used the app signed out left their weeks sitting there, and the next
+ * person to sign in — a different person, a different account — had that work
+ * copied into their account permanently, because the migration flag is per-uid
+ * and so re-fires for every new account on the device.
+ *
+ * Called once the weeks are safely in an account, which is the moment the
+ * shared copy stops being the only copy and starts being a leak.
+ */
+function clearAnonWork(): void {
+  localStorage.removeItem(ANON_KEY);
+  localStorage.removeItem(metaKey(ANON_KEY));
+}
+
 export async function migrateLocalToCloud(): Promise<number> {
   const uid = requireUid();
   const flag = migratedFlag(uid);
@@ -360,6 +417,7 @@ export async function migrateLocalToCloud(): Promise<number> {
   const localWeeks = readWeeks(ANON_KEY);
   const weekStarts = Object.keys(localWeeks);
   if (weekStarts.length === 0) {
+    clearAnonWork();
     localStorage.setItem(flag, 'yes');
     return 0;
   }
@@ -382,6 +440,28 @@ export async function migrateLocalToCloud(): Promise<number> {
     uploaded += 1;
   }
 
+  /* Only reached if every `saveWeek` above resolved — one throw propagates out
+     of here, App leaves the flag unset, and the next sign-in retries against
+     an anon blob that is still intact. So arriving here means the work is in
+     the account and the shared copy is now purely a leak. */
+  clearAnonWork();
   localStorage.setItem(flag, 'yes');
   return uploaded;
+}
+
+/**
+ * Drops this account's cached weeks from the device. The cloud copy is
+ * untouched; this only forgets what is mirrored locally.
+ *
+ * Refuses while anything is still un-uploaded, and reports it, because the
+ * mirror is the only copy of that work — clearing it to tidy up after a
+ * sign-out would destroy exactly the edits the dirty flag exists to protect.
+ * The caller flushes first and can tell the user when it could not.
+ */
+export function clearAccountCache(uid: string): boolean {
+  const base = mirrorKey(uid);
+  if (Object.values(readMeta(base)).some((m) => m?.dirty)) return false;
+  localStorage.removeItem(base);
+  localStorage.removeItem(metaKey(base));
+  return true;
 }

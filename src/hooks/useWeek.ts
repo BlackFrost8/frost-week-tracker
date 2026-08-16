@@ -22,6 +22,14 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
   const [loading, setLoading] = useState(true);
   const [sync, setSync] = useState<SyncState>('idle');
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Why there is no week to show, when there isn't one.
+   *
+   * Kept apart from `error`, which reports a failed *save* while a perfectly
+   * good week is on screen. These are different sentences to the user and the
+   * app renders them in different places, so one string could not carry both.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
   /** Bumped to force a re-read — the only way a tab ever sees another device. */
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -118,11 +126,13 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
          `readyRef` refuses to save into. */
       weekRef.current = null;
       setWeek(null);
+      setLoadError(null);
       return;
     }
 
     let active = true;
     setLoading(true);
+    setLoadError(null);
 
     (async () => {
       const seq = editSeq.current;
@@ -139,10 +149,19 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
         setError(null);
       } catch (e) {
         if (!active || editSeq.current !== seq) return;
-        setError(e instanceof Error ? e.message : 'Could not load this week.');
-        const fallback = createWeek(weekStart, defaultsRef.current);
-        weekRef.current = fallback;
-        setWeek(fallback);
+        /* Deliberately no fallback week.
+           This used to install a blank one, so a week that merely failed to
+           load rendered as 0%, 0 / 0 and "nothing planned yet" — for an app
+           whose entire promise is that your week is kept, the failure mode was
+           indistinguishable from having lost it. Worse, that blank week was
+           live: ticking anything on it scheduled a save, and the save was a
+           real one, so a transient read failure could end with an empty week
+           written over the account's real one.
+           Leaving it null keeps `mutate` shut (it returns early without a
+           week) and lets App say what actually happened. */
+        weekRef.current = null;
+        setWeek(null);
+        setLoadError(e instanceof Error ? e.message : 'Could not load this week.');
       } finally {
         if (active) setLoading(false);
       }
@@ -385,6 +404,9 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     [flush, weekStart],
   );
 
+  /** Re-run the load. The one way out of `loadError` without a full reload. */
+  const retry = useCallback(() => setReloadToken((n) => n + 1), []);
+
   return {
     week,
     previousWeek,
@@ -393,6 +415,8 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     loading,
     sync,
     error,
+    loadError,
+    retry,
     goToWeek,
     toggleTask,
     setTaskLabel,
