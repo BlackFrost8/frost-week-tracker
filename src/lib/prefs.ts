@@ -47,8 +47,45 @@ const everyDay = (): DayId[] => [...DAY_IDS];
 
 /* There is deliberately no starter list. A routine you didn't choose is
    someone else's routine, and five tasks you have to delete before you can
-   begin are worse than a blank card. An empty day offers greyed prompts
-   instead (`lib/suggestions.ts`) — nothing is saved until one is clicked. */
+   begin are worse than a blank card. An empty day offers what that weekday
+   held last week instead — nothing is saved until one is clicked. */
+
+/**
+ * The starter list that used to be written into every new account's prefs.
+ *
+ * Dropping it from the code was only half the job: an account that signed in
+ * even once under the old version has these five saved in its prefs document,
+ * so they load back on every sign-in and seed every new week — which is why
+ * signing in still produced five tasks nobody chose, long after the seed was
+ * removed. `isLegacyStarter` recognises that untouched list and `loadPrefs`
+ * clears it, once, for good.
+ */
+const LEGACY_STARTER = [
+  'wake up at 6:00',
+  'gym',
+  'read 10 pages',
+  'drink 2l of water',
+  'cook a healthy meal',
+];
+
+/**
+ * True only for the auto-seeded list exactly as it was written: all five
+ * labels, nothing added or renamed, every one still set to all seven days.
+ * Change any part of it — delete a line, retype one, narrow "Gym" to
+ * Mon/Wed/Fri — and it stops matching, because at that point it is a routine
+ * the user has actually chosen and must not be thrown away.
+ */
+function isLegacyStarter(tasks: StandingTask[]): boolean {
+  if (tasks.length !== LEGACY_STARTER.length) return false;
+  if (!tasks.every((t) => t.days.length === DAY_IDS.length)) return false;
+  const labels = tasks.map((t) => t.label.toLowerCase());
+  return LEGACY_STARTER.every((label) => labels.includes(label));
+}
+
+/** The prefs as they should be, with the abandoned seed dropped. */
+function withoutLegacyStarter(prefs: Prefs): Prefs {
+  return isLegacyStarter(prefs.defaultTasks) ? { ...prefs, defaultTasks: [] } : prefs;
+}
 
 const ANON_KEY = 'frost-week-tracker:prefs';
 const localKey = (uid: string | null) => (uid ? `frost-week-tracker:prefs:${uid}` : ANON_KEY);
@@ -123,17 +160,30 @@ const prefsDoc = (uid: string) => doc(db!, 'users', uid, 'settings', 'prefs');
  */
 export async function loadPrefs(): Promise<Prefs> {
   const uid = auth?.currentUser?.uid ?? null;
-  const local = readLocal(uid);
-  if (!uid || !db) return local;
+  const local = withoutLegacyStarter(readLocal(uid));
+  if (!uid || !db) {
+    // Signed out the fix is local-only, and savePrefs is the write either way.
+    if (isLegacyStarter(readLocal(uid).defaultTasks)) await savePrefs(local);
+    return local;
+  }
 
   try {
     const snap = await getDoc(prefsDoc(uid));
     if (!snap.exists()) {
-      // First sign-in on this account: adopt whatever was set up offline.
+      // First sign-in on this account: adopt whatever was set up offline —
+      // minus the abandoned seed, which must not be carried into the account.
       if (local.defaultTasks.length > 0 || local.avatar) await savePrefs(local);
       return local;
     }
     const cloud = normalise(snap.data());
+    const cleaned = withoutLegacyStarter(cloud);
+    // Persist the clearing rather than filtering on read: otherwise every
+    // device keeps re-hiding a list that is still sitting in the document, and
+    // the next version to read it plainly would bring the five tasks back.
+    if (cleaned !== cloud) {
+      await savePrefs(cleaned);
+      return cleaned;
+    }
     writeLocal(uid, cloud);
     return cloud;
   } catch {
