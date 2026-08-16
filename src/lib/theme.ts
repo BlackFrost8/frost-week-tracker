@@ -129,9 +129,23 @@ export function deriveTheme(spec: ThemeSpec): Record<string, string> {
   // A hair of accent in the text is what stops a theme reading as grey-on-grey.
   const tint = (c: RGB, t = 0.05) => mix(c, accent, t);
 
+  /* Three tiers, and all three are text — so all three have to clear 4.5:1
+     against the *worst* thing they sit on, which is surface-2 rather than the
+     canvas. The faint tier did not come close: 2.58–2.91 across the presets,
+     below even the 3:1 floor for non-text. It was not carrying decoration
+     either — `+ add task`, the suggestion buttons, "nothing planned yet", the
+     week strip's dates and the intent panel's three prompts are all faint, so
+     the app's primary verb and its most personal question were its least
+     legible type.
+     Raising faint alone would have landed it on top of dim (both ≈5:1) and
+     collapsed three tiers into two, so the ladder is re-spaced instead: even
+     steps of roughly 1.7× contrast, measured on surface-2, worst preset —
+     text ≈12.5–14.6, dim ≈7.5–8.8, faint ≈4.5–5.2. The factors below are the
+     smallest that hold those floors across all five presets in both
+     directions; see the tint amounts, which are unchanged. */
   const text = tint(mix(base, far, light ? 0.92 : 0.9), 0.04);
-  const textDim = tint(mix(base, far, light ? 0.62 : 0.52), 0.07);
-  const textFaint = tint(mix(base, far, light ? 0.42 : 0.32), 0.09);
+  const textDim = tint(mix(base, far, light ? 0.73 : 0.69), 0.07);
+  const textFaint = tint(mix(base, far, light ? 0.59 : 0.5), 0.09);
 
   // Black on a bright accent, white on a dark one. The 1.2 bias breaks ties
   // towards white: a saturated mid-tone like #2f6df6 scores 4.60 against black

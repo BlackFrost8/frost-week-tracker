@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDialog } from '../hooks/useDialog';
 import { formatDuration, parseDurationInput, useClock } from '../hooks/useClock';
 
 /** Ticks on the minute boundary rather than every second — a wall clock that
@@ -100,14 +101,26 @@ export function Clock() {
     inputRef.current?.select();
   }, [editing]);
 
-  useEffect(() => {
-    if (!expanded) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editing) setExpanded(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [expanded, editing]);
+  /**
+   * The focus view is a modal, and it was the one modal that never said so to
+   * anything but a screen reader's label. It declared `role="dialog"` and
+   * `aria-modal` while leaving the entire page behind it tabbable — the
+   * wordmark, the week nav, all seven day cells, every task row and its delete
+   * button — so reaching the timer's own three controls by keyboard meant
+   * tabbing through the whole app first, behind a blur. The other three
+   * dialogs were given `useDialog` in d1df18a; this one was missed because it
+   * had hand-rolled its own Escape handler and so didn't look like it needed
+   * anything.
+   *
+   * `onClose` is re-read on every render inside the hook, so the guard below
+   * always sees the current `editing` — Escape in the length editor cancels
+   * the edit (the input's own handler does that) without also tearing down the
+   * view being edited in, exactly as the handler this replaces behaved.
+   */
+  const panelRef = useDialog(expanded, () => {
+    if (editing) return;
+    setExpanded(false);
+  });
 
   const beginEdit = () => {
     if (!countdown) return;
@@ -260,8 +273,15 @@ export function Clock() {
         aria-hidden="true"
       />
 
-      {face(false)}
-      {controls}
+      {/* Not rendered while the focus view is up. The overlay renders its own
+          copy of both, so leaving these here meant two live copies of the same
+          controls: two identically labelled Start buttons, and — because both
+          copies bind the same `inputRef` — a countdown editor whose focus and
+          selection landed on whichever of the two mounted last. The expand
+          button below deliberately stays, so closing can put focus back on the
+          control that opened it. */}
+      {!expanded && face(false)}
+      {!expanded && controls}
 
       <button
         type="button"
@@ -283,7 +303,9 @@ export function Clock() {
       {expanded &&
         createPortal(
           <div
-            className="frost-rise fixed inset-0 z-[60] grid place-items-center"
+            ref={panelRef}
+            tabIndex={-1}
+            className="frost-rise fixed inset-0 z-[60] grid place-items-center focus:outline-none"
             style={{ backgroundColor: 'rgb(var(--frost-base-rgb) / 0.72)', backdropFilter: 'blur(14px)' }}
             role="dialog"
             aria-modal="true"

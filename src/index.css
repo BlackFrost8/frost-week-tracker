@@ -33,8 +33,8 @@
   /* Tertiary text was #2c3a3c — 1.78:1 on black, i.e. invisible, on ~40 nodes.
      Both tiers are now teal-hued, so even quiet type carries the accent. */
   --color-frost-text: #e6f2f2; /* 18.3:1 */
-  --color-frost-text-dim: #7d9599; /* was 4.17:1 → 6.75:1 */
-  --color-frost-text-faint: #4e666a; /* was 1.78:1 → 3.48:1 */
+  --color-frost-text-dim: #a4b4b6; /* 9.78:1 */
+  --color-frost-text-faint: #748a8b; /* was 3.48:1 → 5.75:1 */
   --color-frost-alert: #ff5d73;
 
   /* A real scale (§2.3) — replaces the old 9/10/11/12/13/14px mush. */

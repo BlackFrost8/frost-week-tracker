@@ -210,6 +210,35 @@ export async function loadPrefs(): Promise<Prefs> {
  */
 let queued: Promise<unknown> = Promise.resolve();
 
+/**
+ * Resolves once every queued prefs write has landed, and rejects if the last
+ * one did not. `savePrefs` is fired and forgotten everywhere else, so this is
+ * the only way to ask whether the device copy is safe to discard yet.
+ */
+export function flushPrefs(): Promise<void> {
+  return queued.then(() => {});
+}
+
+/**
+ * Forgets this account's cached prefs on this device.
+ *
+ * The standing-task list and the profile photo both live here, and nothing
+ * ever removed them: sign out on a shared Chromebook and the next person could
+ * read the previous one's routine and see their picture straight out of
+ * devtools. The uid scoping kept it off the screen, which is not the same as
+ * it being gone.
+ *
+ * Only safe once `flushPrefs` has resolved — there is no dirty flag here the
+ * way there is for weeks, so an unsent edit exists nowhere else.
+ */
+export function clearLocalPrefs(uid: string): void {
+  try {
+    localStorage.removeItem(localKey(uid));
+  } catch {
+    /* Private mode. Nothing was stored to begin with. */
+  }
+}
+
 export function savePrefs(prefs: Prefs): Promise<void> {
   const uid = auth?.currentUser?.uid ?? null;
   const clean = normalise(prefs);

@@ -6,7 +6,14 @@ import { useClickRipple } from './hooks/useClickRipple';
 import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek } from './hooks/useWeek';
-import { cloudStore, localStore, migrateLocalToCloud } from './lib/storage';
+import {
+  cloudStore,
+  clearAccountCache,
+  flushPending,
+  localStore,
+  migrateLocalToCloud,
+} from './lib/storage';
+import { clearLocalPrefs, flushPrefs } from './lib/prefs';
 import { DAY_IDS, completedCount, weekOverallPct } from './lib/week';
 import { useToday } from './hooks/useToday';
 import { paintFavicon } from './lib/favicon';
@@ -59,6 +66,8 @@ export default function App() {
     knownWeeks,
     sync,
     error,
+    loadError,
+    retry,
     goToWeek,
     toggleTask,
     setTaskLabel,
@@ -172,10 +181,73 @@ export default function App() {
     paintFavicon(weekPct, theme.spec.accent, theme.spec.primary);
   }, [weekPct, theme.spec.accent, theme.spec.primary]);
 
+  /**
+   * Everything this account left on this device goes with it.
+   *
+   * Nothing used to be removed at all, so the mirrored weeks, their focus and
+   * reward and affirmation lines, the standing tasks and the profile photo all
+   * stayed readable in devtools by whoever sat down next. On a shared school
+   * Chromebook that is the realistic exposure, and the uid scoping never
+   * addressed it — it keeps one account's data off the *screen*, which is not
+   * the same as it being gone.
+   *
+   * Order is load-bearing. Every write path reads `auth.currentUser`, so all
+   * three flushes have to happen while the session still exists; and each
+   * clear is refused unless its flush confirmed the cloud has the work, since
+   * the device copy is the only other copy. Work that could not be uploaded is
+   * therefore deliberately left behind rather than destroyed to tidy up.
+   */
   const handleSignOut = async () => {
+    const leaving = uid;
+
     await flush();
+    await flushPending().catch(() => 0);
+    const prefsSaved = await flushPrefs().then(
+      () => true,
+      () => false,
+    );
+
     await signOut();
+
+    if (leaving) {
+      clearAccountCache(leaving);
+      if (prefsSaved) clearLocalPrefs(leaving);
+    }
   };
+
+  /* A week that could not be fetched is not a week with nothing in it. Saying
+     so plainly matters more here than anywhere else in the app: the blank
+     week this used to render was the exact picture of the thing the user is
+     most afraid of. The reassurance is also true — nothing is deleted on a
+     failed read, and the week is still in the account. */
+  if (!week && loadError) {
+    return (
+      <>
+        <AmbientBackground />
+        <div className="relative z-10 grid min-h-screen place-items-center px-6">
+          <div className="flex max-w-sm flex-col items-center gap-5 text-center" role="alert">
+            <p className="text-lg text-frost-text">This week didn’t load.</p>
+            <p className="text-sm text-frost-text-dim">
+              Nothing has been lost — it’s still saved. This is usually the
+              connection.
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="min-h-11 rounded-lg px-5 py-2.5 text-sm transition-colors duration-150"
+              style={{
+                backgroundColor: 'var(--color-frost-cyan-200)',
+                color: 'var(--frost-on-accent)',
+              }}
+            >
+              try again
+            </button>
+            <p className="font-mono text-xs text-frost-text-dim">{loadError}</p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (!week) {
     return (
