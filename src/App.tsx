@@ -14,7 +14,7 @@ import {
   migrateLocalToCloud,
 } from './lib/storage';
 import { clearLocalPrefs, flushPrefs } from './lib/prefs';
-import { DAY_IDS, completedCount, weekOverallPct } from './lib/week';
+import { DAY_IDS, completedCount, weekOverallPct, weekTotals } from './lib/week';
 import { useToday } from './hooks/useToday';
 import { paintFavicon } from './lib/favicon';
 import { AmbientBackground } from './components/AmbientBackground';
@@ -268,6 +268,12 @@ export default function App() {
   const selectedDay = week.days.find((d) => d.id === selected) ?? week.days[0];
   const doneToday = todayDay ? completedCount(todayDay) : 0;
 
+  /* Last week's score, or null when there is nothing honest to say — no
+     previous week at all, or one that was never planned. A week is only
+     persisted once it is edited, so "no previous week" is common and normal. */
+  const previousPct =
+    previousWeek && weekTotals(previousWeek).total > 0 ? weekOverallPct(previousWeek) : null;
+
   /* What this weekday held last week, minus whatever is already on it this
      week — so the list shrinks as you use it and disappears once you've taken
      everything worth taking. Capped at six: past that it stops being a nudge
@@ -331,20 +337,21 @@ export default function App() {
           />
 
           <main className="grid gap-12 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_300px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
-            {/* Read-only, so their placement can vary across breakpoints without
-                ever disagreeing with keyboard order. The curve is a separate
-                grid item so that on a phone it falls below the card — stacked
-                with the hero it pushed the day's tasks ~230px further down. */}
-            <div className="flex flex-col gap-6 md:col-start-2 md:row-start-1 xl:col-start-1 xl:row-start-1">
-              <HeroPanel week={week} />
-              {todayDay && (
-                <p className="text-center font-mono text-sm text-frost-text-dim">
-                  <span className="text-frost-cyan-200">+{doneToday}</span> today
-                </p>
-              )}
-            </div>
+            {/* THE DAY CARD IS FIRST, and that is a phone decision.
+                Below `md` this grid is one column, so source order is what the
+                reader gets — and the reader is usually standing between two
+                lessons with thirty seconds. The card used to sit behind a
+                260px ring, which put the first checkbox at y=752: fine in a
+                notional 812px viewport, below the fold in the ~660px a real
+                mobile browser leaves once its chrome is counted. The most
+                frequent interaction in the app opened onto a screen with
+                nothing tappable on it.
 
-            {/* Capped and centred rather than filling its column: extra width
+                Nothing moves on a larger screen. Every child here is placed
+                explicitly from `md` upward, so the desktop layout is set by
+                the col-start/row-start pairs and not by this order at all.
+
+                Capped and centred rather than filling its column: extra width
                 becomes symmetric gutter instead of a hole to the right of a
                 490px text measure. */}
             <div className="mx-auto w-full max-w-[660px] md:col-start-1 md:row-start-1 md:row-span-3 xl:col-start-2 xl:row-start-1 xl:row-span-2">
@@ -355,8 +362,21 @@ export default function App() {
               />
             </div>
 
+            {/* Read-only, so their placement can vary across breakpoints without
+                ever disagreeing with keyboard order. The curve is a separate
+                grid item so that on a phone it falls below the card — stacked
+                with the hero it pushed the day's tasks ~230px further down. */}
+            <div className="flex flex-col gap-6 md:col-start-2 md:row-start-1 xl:col-start-1 xl:row-start-1">
+              <HeroPanel week={week} previousPct={previousPct} />
+              {todayDay && (
+                <p className="text-center font-mono text-sm text-frost-text-dim">
+                  <span className="text-frost-cyan-200">+{doneToday}</span> today
+                </p>
+              )}
+            </div>
+
             <div className="md:col-start-2 md:row-start-2 xl:col-start-1 xl:row-start-2">
-              <PaceCurve week={week} />
+              <PaceCurve week={week} today={today} />
             </div>
 
             <div className="md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
