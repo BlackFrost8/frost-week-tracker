@@ -90,6 +90,7 @@ export function DayCard({
               onToggle={() => onToggle(task.id)}
               onLabelChange={(label) => onLabelChange(task.id, label)}
               onDelete={() => onDelete(task.id)}
+              onContinue={() => setFocusId(onAdd())}
             />
           ))}
 

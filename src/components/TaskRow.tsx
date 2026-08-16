@@ -10,6 +10,13 @@ type Props = {
   dense?: boolean;
   /** Set on the row `+ add task` just created, so it is typable immediately. */
   autoFocus?: boolean;
+  /**
+   * Open another blank row after this one is filed. Enter used to commit and
+   * drop focus to `<body>`, so every task after the first cost another trip to
+   * `+ add task` — and on a phone that closes and reopens the keyboard between
+   * every single line. Planning seven days was around fifty interactions.
+   */
+  onContinue?: () => void;
 };
 
 export function TaskRow({
@@ -19,6 +26,7 @@ export function TaskRow({
   onDelete,
   dense = false,
   autoFocus = false,
+  onContinue,
 }: Props) {
   const isBlank = task.label.trim() === '';
   const [editing, setEditing] = useState(false);
@@ -85,7 +93,16 @@ export function TaskRow({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') commit();
+            if (e.key === 'Enter') {
+              const carriedOn = draft.trim() !== '';
+              commit();
+              /* Only for a row that was just added — `editing` is true only
+                 when the pencil opened an existing task, and pressing Enter to
+                 confirm a rename must not also append a blank row. Enter on an
+                 empty row ends the run instead: `commit` has already removed
+                 it, which is the natural way to stop typing a list. */
+              if (!editing && carriedOn) onContinue?.();
+            }
             if (e.key === 'Escape') cancel();
           }}
           placeholder="Add a task"
