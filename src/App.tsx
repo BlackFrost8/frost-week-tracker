@@ -35,7 +35,7 @@ export default function App() {
   // name, so both need the same instance of that state.
   const theme = useTheme();
 
-  const { mode, profile } = useAuth();
+  const { mode, profile, refresh: refreshAccount } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [migratedUid, setMigratedUid] = useState<string | null>(null);
@@ -396,6 +396,7 @@ export default function App() {
         onApplyToWeek={applyStandingTasks}
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}
+        onAccountChanged={refreshAccount}
       />
 
       <ThemeDialog open={themeOpen} onClose={closeTheme} theme={theme} />
