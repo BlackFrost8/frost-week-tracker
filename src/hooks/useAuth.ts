@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  EmailAuthProvider,
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  linkWithCredential,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -18,6 +20,11 @@ export type Profile = {
   name: string | null;
   email: string | null;
   avatarUrl: string | null;
+  /** Whether this account can be signed into with a password at all. Read from
+      `providerData`, which is local to the token — no network, and unaffected
+      by the email-enumeration protection that makes every failed sign-in
+      report the same generic code. */
+  hasPassword: boolean;
 };
 
 function toProfile(user: User): Profile {
@@ -26,6 +33,7 @@ function toProfile(user: User): Profile {
     name: user.displayName,
     email: user.email,
     avatarUrl: user.photoURL,
+    hasPassword: user.providerData.some((p) => p.providerId === 'password'),
   };
 }
 
@@ -46,7 +54,15 @@ export function useAuth() {
     });
   }, []);
 
-  return { profile, mode, email: profile?.email ?? null };
+  /* Linking a credential mutates `currentUser` in place without firing
+     `onAuthStateChanged` — that only tracks sign-in and sign-out. Without this,
+     `hasPassword` would stay false until the next full sign-in and the dialog
+     would keep offering to add a password that already exists. */
+  const refresh = useCallback(() => {
+    if (auth?.currentUser) setProfile(toProfile(auth.currentUser));
+  }, []);
+
+  return { profile, mode, refresh, email: profile?.email ?? null };
 }
 
 /**
@@ -94,4 +110,27 @@ export async function signUp(email: string, password: string): Promise<void> {
 export async function sendPasswordReset(email: string): Promise<void> {
   if (!auth) throw new Error('Cloud sync is not configured.');
   await sendPasswordResetEmail(auth, email);
+}
+
+/**
+ * Attach a password to the account that is already signed in.
+ *
+ * This exists because of a Firebase rule that is easy to hit and impossible to
+ * diagnose from the sign-in screen: when someone signs in with a provider that
+ * verifies email ownership (Google), and a password account already exists on
+ * the same address whose email was never verified, Firebase **removes the
+ * password credential** rather than linking the two. The reasoning is sound —
+ * an unverified password account may have been opened by someone who does not
+ * own the address, so the provably-real owner takes it over — but the visible
+ * result is a password that silently stops working while Google keeps working.
+ *
+ * Linking here is the documented repair, and it is durable: the address is
+ * verified by now, so the same takeover cannot happen a second time.
+ */
+export async function linkPassword(password: string): Promise<void> {
+  if (!auth) throw new Error('Cloud sync is not configured.');
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in first, then add a password.');
+  if (!user.email) throw new Error('This account has no email address to attach a password to.');
+  await linkWithCredential(user, EmailAuthProvider.credential(user.email, password));
 }
