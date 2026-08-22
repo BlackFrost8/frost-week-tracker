@@ -1,6 +1,7 @@
 # FROST // WEEK TRACKER — Handoff
 
-Context for picking this project up in a new session. Written 13 Aug 2026.
+Context for picking this project up in a new session. Written 13 Aug 2026,
+updated 20 Aug 2026.
 
 ---
 
@@ -11,13 +12,17 @@ Context for picking this project up in a new session. Written 13 Aug 2026.
 | Repo | https://github.com/BlackFrost8/frost-week-tracker (public) |
 | Live URL | https://planner.froststudio.org |
 | Local path | `C:\Users\josua\Downloads\LifeOrg` |
-| Branch | `main` — the design branch was fast-forwarded into it, **not pushed yet** |
+| Branch | `main`, synced with `origin/main` at `78e6c7a` (PR #8 merged) |
 | Build | Passing (`npm run build`, type-check clean) |
 | App works locally | Yes — rendered and verified in-browser |
-| **Live site works** | **No — blocked on one GitHub setting, see §2** |
-| Cloud sync | Code complete, **never configured or tested against a real project** |
+| **Live site works** | **Yes** — verified 20 Aug, see §2.1 |
+| Cloud sync | Configured against the real `frost-week` project and exercised in use |
 
-Local `main` now carries everything:
+Both blockers this file was originally written to flag are now closed. The
+history since is one hardening pass over the cross-device round trip, then a
+polish pass; §2 records what was verified and how.
+
+Local `main` carries everything through PR #8:
 
 | | |
 | --- | --- |
@@ -30,8 +35,9 @@ Local `main` now carries everything:
 | `6caa906` | Typed countdown length, full-screen timer focus view |
 | *(latest)* | Themes behind the wordmark, standing tasks in account settings |
 
-No PR is needed — the design work is on `main` now. **`gh` is not installed on
-this machine.** Nothing in the code is half-finished.
+`gh` **is** installed now (2.97.0), so PRs can be opened from the terminal —
+earlier revisions of this file said otherwise. Nothing in the code is
+half-finished.
 
 ### What the latest commit changed, and why
 
@@ -56,47 +62,59 @@ four ways to lose work. All four are fixed; the reasoning is in §5.
 
 ---
 
-## 2. Do these first
+## 2. Deployment and cloud — both resolved
 
-### 2.1 Fix the blank live site — one setting, user action required
+*This section used to be a to-do list. Both items are done; it is kept as a record
+of what was wrong and how it was verified, because both failures are recurrable.*
 
-The site currently serves the **raw repo** instead of the built app. The browser is
-handed `main.tsx`, gets MIME type `application/octet-stream`, refuses to execute it,
-and renders nothing. Console shows:
+### 2.1 The live site — fixed and verified
+
+The site once served the **raw repo** instead of the built app: the browser was handed
+`main.tsx`, got MIME type `application/octet-stream`, refused to execute it, and
+rendered nothing, with
 
 > Failed to load module script: Expected a JavaScript-or-Wasm module script…
 
-Cause: **Pages is set to "Deploy from a branch"**, which publishes files verbatim
-rather than running the workflow that compiles them.
+The cause was **Pages set to "Deploy from a branch"**, publishing files verbatim rather
+than running the workflow that compiles them. The fix was **Settings → Pages → Build and
+deployment → Source → "GitHub Actions"**, and it has been applied.
 
-Fix: **Repo → Settings → Pages → Build and deployment → Source → "GitHub Actions"**
+Verified 20 Aug 2026 against https://planner.froststudio.org:
 
-This is not a code bug. Do not "fix" it by changing `vite.config.ts` `base` — that is
-already correct (`base: './'`, which works on both a project site and a custom domain).
+| Check | Result |
+| --- | --- |
+| Document + JS + CSS | all `200` |
+| Console errors | none |
+| Served bundle | `assets/index-hfRQkkoc.js` — **identical hash to a local `npm run build`**, so the deploy is current with `main` |
+| Render | full app; header, week nav, day card, intent panel |
+| Background | `rgb(0,0,0)` |
+| `sign in` control | present, so Firebase config is live rather than local-only |
 
-### 2.2 Push
+That bundle-hash match is the cheapest way to confirm a deploy is current — build
+locally and compare the filename against the one the site requests.
 
-```bash
-git push
-```
+This was never a code bug. Do not "fix" any recurrence by changing `vite.config.ts`
+`base` — that is already correct (`base: './'`, which works on both a project site and a
+custom domain).
 
-Then watch the **Actions** tab. Green run = live for real.
-
-> Note: `origin/main` had a `CNAME` commit created by GitHub when the custom domain was
-> set in Settings. Local `main` has already been rebased onto it, so the push is clean.
-> If the branches diverge again, `git pull --rebase origin main`.
-
-There are now two CNAME files, both intentional:
+There are two CNAME files, both intentional:
 - `/CNAME` (repo root) — written by GitHub, used by branch-deploy mode
 - `/public/CNAME` — copied into `dist/` by Vite so the **Actions** artifact carries the
   domain. This is the one that matters going forward.
 
-### 2.3 Set up Firebase (never done — cloud sync is untested)
+### 2.2 Firebase — configured and in use
 
-Full walkthrough in [README.md](README.md#sign-in-with-google-5-minutes). Short version:
-create a project → enable the Google sign-in provider → add your domain to Authorized
-domains → create Firestore → publish [`firestore.rules`](firestore.rules) → paste the
-six config values into [`src/lib/firebase-config.ts`](src/lib/firebase-config.ts).
+`f3dac8a` pointed the app at the real **`frost-week`** project, and the eleven commits
+after it are that cloud path being exercised against it rather than merely compiled:
+sync no longer losing work, local data scoped per uid, the stale starter list cleared,
+prefs writes queued so a slow one can't undo a fast one. The single largest untested
+risk in this project is no longer untested.
+
+Setup walkthrough, if it ever needs redoing:
+[README.md](README.md#sign-in-with-google-5-minutes). Short version: create a project →
+enable the Google sign-in provider → add your domain to Authorized domains → create
+Firestore → publish [`firestore.rules`](firestore.rules) → paste the six config values
+into [`src/lib/firebase-config.ts`](src/lib/firebase-config.ts).
 
 **Supabase was removed** in favour of Firebase (see §5.8). The deciding factor was setup
 burden on a static host: Supabase + Google OAuth is ~16 steps across the Supabase
@@ -104,24 +122,24 @@ dashboard *and* the Google Cloud Console, because you must create the OAuth clie
 copy a client secret yourself. Firebase auto-provisions that OAuth client, so the whole
 Cloud Console leg disappears — 7 steps, one website, no secrets, no SQL.
 
-Until config is pasted in, the app runs local-only (localStorage, one device) and the
-account dialog says so. **The cloud path — sign-in, Firestore read/write, rules,
-migration — has only been verified as compiling and rendering, never against a live
-project.** Treat first-run there as unproven.
+Without config the app falls back to local-only (localStorage, one device) and the
+account dialog says so. That fallback is still live code and still correct — it is what
+runs if the config is ever emptied.
 
 ---
 
 ## 3. What it is
 
 A gamified weekly task tracker. 7 days, a checklist per day, completion rings, and a
-Focus/Reward/Affirmation panel. Built from two spec files that live in the project root
-(untracked, not committed):
+Focus/Reward/Affirmation panel. It was built from two spec files:
 
 - `frost-week-tracker-spec.md` — the original feature brief
-- `frost-design-overhaul.md` — the design system rewrite (supersedes the first file's
+- `frost-design-overhaul.md` — the design system rewrite (superseded the first file's
   visual direction entirely)
 
-**Where they conflict, the overhaul spec wins.** The original spec's §9 also declared
+**Neither file exists any more** — they were never committed and are no longer on disk.
+Where they conflicted, the overhaul won, and what survived of both is §5 and §6 of this
+file. Treat those as the source, not a summary of one. The original spec's §9 also declared
 auth and cloud sync out of scope; the user explicitly overrode that, which is why the
 storage layer exists.
 
@@ -140,7 +158,8 @@ src/
 │   ├── theme.ts           Presets + the colour maths that derives a whole palette
 │   └── prefs.ts           Standing tasks: local-first, mirrored to the account
 ├── hooks/
-│   ├── useAuth.ts         Session state + Profile, Google + email sign in/out
+│   ├── useAuth.ts         Session state + Profile, Google + email sign in/out,
+│   │                      linkPassword() to repair a wiped password (§5.32)
 │   ├── useWeek.ts         Current Week + every mutation + debounced autosave
 │   ├── useClock.ts        Stopwatch/countdown derived from one epoch timestamp
 │   ├── useClickRipple.ts  Capture-phase click bloom, own layer, JS-gated
@@ -405,15 +424,21 @@ after any visual change — the counts should not creep back up:
 })()
 ```
 
-| Metric | Before overhaul | After overhaul | Current | Ceiling |
-| --- | --- | --- | --- | --- |
-| Bordered | 129 | 21 | **16** | keep ≤ ~25 |
-| Glowing | 12 | 1 | **1** | 1–2 |
-| Uppercase | 67 | 1 | **1** | 1 |
-| Background | `rgb(5,7,10)` | `rgb(0,0,0)` | **`rgb(0,0,0)`** | must stay black |
+| Metric | Before overhaul | After overhaul | Aug 13 | Aug 20 (empty week) | Ceiling |
+| --- | --- | --- | --- | --- | --- |
+| Bordered | 129 | 21 | 16 | **2** | keep ≤ ~25 |
+| Glowing | 12 | 1 | 1 | **1** | 1–2 |
+| Uppercase | 67 | 1 | 1 | **1** | 1 |
+| Background | `rgb(5,7,10)` | `rgb(0,0,0)` | `rgb(0,0,0)` | **`rgb(0,0,0)`** | must stay black |
 
 21 → 16 because the focal card stopped rendering five phantom blank rows, each of which
 carried a checkbox square.
+
+**The Aug 20 count of 2 is not an improvement — it is a different measurement.** The app
+now starts with no tasks, so that run had no checkbox squares and no task dividers to
+count. Borders here scale with content. Re-run the guard on **a week with real tasks in
+it** before reading anything into the number, or it will keep reporting a flattering 2
+forever.
 
 **Two known blind spots in this script** — don't read a clean result as proof:
 1. It never counts `text-shadow`, so `.frost-hero-text` — an unconditional glow — is
@@ -511,36 +536,61 @@ to trust those.
 
 ## 8. Not done / open
 
+*Re-verified against the code and the live site on 20 Aug 2026.*
+
+### Closed since this file was written
+
+- **~~Live site blocked~~** — fixed and verified, §2.1.
+- **~~Cloud path untested~~** — configured and exercised against `frost-week`, §2.2.
+- **~~Page gutter never confirmed~~** — `.frost-shell` carries `padding-inline:18px`
+  (32px at the wider breakpoint) in the built CSS, and a freshly-created probe element
+  reads back 18px on the live site at 375px wide. See the caveat under *Still unseen*.
+- **~~Spec files untracked~~** — moot in the worst way: `frost-week-tracker-spec.md`
+  and `frost-design-overhaul.md` are **no longer on disk at all**, and were never
+  committed. The design rules that survived them live in §5 and §6 of this file, which
+  is now the only record. Treat §6 as the source of truth, not a summary of one.
+
+### Still open
+
 - **Habit Tracker panel.** Visible in the user's original screenshot; original spec §9
-  defers it to v2. Never built. Most likely next feature request.
-- **Cloud path untested against a live Firebase project** (§2.3). Both the unconfigured
-  and signed-out UI states were verified in-browser; signed-in was not, because it needs
-  a real project.
-- **No tests.** No test runner is installed. Verification so far has been manual
-  in-browser DOM assertions.
-- **Bundle is 398 KB / 121.5 KB gzipped.** Slightly *smaller* than the Supabase build
-  (430 KB / 122 KB) — `firebase/firestore/lite` plus `firebase/auth` tree-shakes better
-  than `@supabase/supabase-js` did. Do not switch to the full `firebase/firestore`; this
-  app loads on navigation and writes on a debounce, so it has no use for realtime
-  listeners or offline persistence, which is most of the full client's weight.
-- **Account deletion** is not implemented. Sign-out is.
-- **The rendered page gutter was never visually confirmed.** `.frost-shell`'s
-  padding is correct in the built CSS and is unlayered so nothing can override
-  it, but the pane stopped compositing before it could be seen. **Look at this
-  on a phone first thing** — if content touches the screen edge, that rule is
-  where to look.
-- **No screenshot of the new layout exists.** Everything was verified through
-  DOM measurement and the built files.
-- **`PaceCurve` returns `null` when the week has no tasks at all**, so the left
-  rail is short on a genuinely empty week. Acceptable, but it is the emptiest
-  reachable desktop state now.
-- **No PRODUCT.md.** The Impeccable skill flagged this: there is no captured
-  product truth, so each session re-infers intent from the code. `$impeccable
-  init` would fix it and is the cheapest next improvement to how this project
-  is worked on.
-- **Spec files untracked.** `frost-week-tracker-spec.md` and `frost-design-overhaul.md`
-  sit in the project root uncommitted. The user was asked and hasn't decided.
+  defers it to v2. Never built — no reference to it anywhere in `src/`. Still the most
+  likely next feature request.
+- **No tests.** No test runner is installed; `package.json` has no `test` script.
+  Every verification in this project's history has been manual in-browser DOM
+  assertion, which is exactly the kind of check that doesn't survive a refactor.
+  **This is the largest remaining structural gap** — see the readiness note below.
+- **Account deletion** is not implemented. Sign-out is. Worth knowing if this ever
+  needs to answer a data-deletion request.
+- **The password-linking repair (§5.32) has never been run end to end.** The code
+  builds and the signed-out error path was verified in-browser against the live
+  project, but linking itself needs a signed-in session, which no session so far has
+  had. First run is unproven; `auth/requires-recent-login` is the likeliest snag and
+  is already mapped to a message that says what to do.
+- **No PRODUCT.md.** There is no captured product truth, so each session re-infers
+  intent from the code. Cheapest available improvement to how the project is worked on.
+- **`PaceCurve` returns `null` when the week has no tasks at all** ([PaceCurve.tsx:22](src/components/PaceCurve.tsx:22)),
+  so the left rail is short on a genuinely empty week. Since the app now *starts*
+  empty rather than seeded, this is the first-run desktop state, not an edge case.
 - **Multi-week analytics, habit streaks, native app** — all explicitly out of scope.
+
+### Still unseen
+
+- **No screenshot of the app has ever been taken.** Screenshots fail in this
+  environment whenever the Browser pane isn't displayed, which has been every session
+  so far. Everything — layout, gutter, the whole visual design — has been verified
+  through DOM measurement and the built CSS, never with eyes. The measurements are
+  sound and §7.6's probe technique works, but **no automated check in this project can
+  see a visual defect**, only a structural one. One human look on a real phone would
+  retire more risk than any amount of further DOM querying.
+
+### Bundle
+
+**448 KB / 135.8 KB gzipped** (was 398 KB / 121.5 KB when this file was written; the
+profile-picture, dialog and theming work since accounts for the ~14 KB gzipped). Still
+comparable to the old Supabase build (430 KB / 122 KB). Do not switch to the full
+`firebase/firestore`: this app loads on navigation and writes on a debounce, so it has
+no use for realtime listeners or offline persistence, which is most of the full
+client's weight.
 
 ---
 

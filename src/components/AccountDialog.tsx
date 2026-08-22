@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DayId } from '../types';
 import {
   sendPasswordReset,
+  linkPassword,
   signIn,
   signInWithGoogle,
   signUp,
@@ -24,6 +25,8 @@ type Props = {
   onApplyToWeek: (tasks: StandingTask[]) => void;
   avatar: string | null;
   onSaveAvatar: (avatar: string | null) => void;
+  /** Re-read the signed-in user after a credential changes under us. */
+  onAccountChanged: () => void;
 };
 
 /** Trim, and drop the rows that are still blank. Days are left exactly as set. */
@@ -342,10 +345,21 @@ function friendlyAuthError(err: unknown): string | null {
     case 'auth/popup-closed-by-user':
     case 'auth/cancelled-popup-request':
       return null; // Deliberate cancellation isn't an error worth reporting.
+    /* All three arrive as one code once email-enumeration protection is on, so
+       this message cannot say which went wrong — and the likeliest cause isn't
+       a typo at all. Signing in with Google strips the password from an account
+       whose email was never verified, so the address exists, the password is
+       remembered correctly, and it still fails. Point at the way out. */
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return 'That email and password don’t match an account.';
+      return 'That didn’t work. If you normally continue with Google, this account may have no password yet — sign in with Google, then add one under your profile.';
+    case 'auth/provider-already-linked':
+      return 'This account already has a password.';
+    case 'auth/credential-already-in-use':
+      return 'That password is already attached to a different account.';
+    case 'auth/requires-recent-login':
+      return 'For safety this needs a fresh sign-in. Sign out, continue with Google again, then add the password.';
     case 'auth/email-already-in-use':
       return 'There’s already an account with that email — sign in instead.';
     case 'auth/weak-password':
@@ -371,6 +385,115 @@ function friendlyAuthError(err: unknown): string | null {
   }
 }
 
+/**
+ * Attaches a password to an account that currently has none.
+ *
+ * Only rendered when `hasPassword` is false, which is the state Google sign-in
+ * leaves behind when it takes over an unverified password account (see
+ * `linkPassword`). Without this the email fallback in §5.14 — the one that
+ * exists for a school Chromebook that blocks OAuth popups — is unreachable on
+ * exactly the account that needs it, and nothing on the sign-in screen can
+ * explain why.
+ *
+ * The address is fixed to the account's own and shown, not typed: a password
+ * credential must carry the account's email, and letting it be edited only
+ * creates a mismatch that fails with a confusing code.
+ */
+function PasswordSetup({ profile, onLinked }: { profile: Profile; onLinked: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await linkPassword(password);
+      setPassword('');
+      setDone(true);
+      setOpen(false);
+      onLinked();
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <p className="text-sm text-frost-text-dim">
+        Password added. You can now sign in with{' '}
+        <span className="text-frost-cyan-100">{profile.email}</span> or with Google.
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <div>
+        <p className="text-sm text-frost-text-dim">
+          This account signs in with Google only.
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-1 text-sm text-frost-cyan-300 transition-colors hover:text-frost-cyan-100"
+        >
+          add a password
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3">
+      <p className="text-sm text-frost-text-dim">
+        Set a password for <span className="text-frost-cyan-100">{profile.email}</span>. Google
+        keeps working either way.
+      </p>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-frost-text-faint">new password</span>
+        <input
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={6}
+          autoFocus
+          className="frost-field text-sm"
+          value={password}
+          onChange={(ev) => setPassword(ev.target.value)}
+        />
+      </label>
+      <div className="flex items-center gap-4">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-lg px-4 py-2 text-sm transition-colors duration-150 disabled:opacity-50"
+          style={{ backgroundColor: 'var(--color-frost-cyan-300)', color: 'var(--frost-on-accent)' }}
+        >
+          {busy ? 'saving…' : 'save password'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setPassword('');
+            setError(null);
+          }}
+          className="text-sm text-frost-text-faint transition-colors hover:text-frost-text-dim"
+        >
+          cancel
+        </button>
+      </div>
+      {error && <p className="text-sm text-frost-alert">{error}</p>}
+    </form>
+  );
+}
+
 export function AccountDialog({
   open,
   onClose,
@@ -381,6 +504,7 @@ export function AccountDialog({
   onApplyToWeek,
   avatar,
   onSaveAvatar,
+  onAccountChanged,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -389,12 +513,18 @@ export function AccountDialog({
   const [creating, setCreating] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [password, setPassword] = useState('');
+  /* Linking flips `profile.hasPassword` to true, which closes the gate that
+     renders PasswordSetup — unmounting it mid-success and swallowing its
+     confirmation. This keeps the section alive for the rest of the dialog's
+     life so the "password added" line is actually reachable. */
+  const [passwordLinked, setPasswordLinked] = useState(false);
 
   useEffect(() => {
     if (open) {
       setError(null);
       setNotice(null);
       setPassword('');
+      setPasswordLinked(false);
     }
   }, [open]);
 
@@ -609,6 +739,21 @@ export function AccountDialog({
         {isCloudConfigured && profile && (
           <>
             <PhotoPicker profile={profile} avatar={avatar} onSave={onSaveAvatar} />
+
+            {(!profile.hasPassword || passwordLinked) && (
+              <>
+                <span className="frost-divider mt-7 block" />
+                <div className="mt-7">
+                  <PasswordSetup
+                    profile={profile}
+                    onLinked={() => {
+                      setPasswordLinked(true);
+                      onAccountChanged();
+                    }}
+                  />
+                </div>
+              </>
+            )}
 
             <span className="frost-divider mt-7 block" />
             <StandingTasks
