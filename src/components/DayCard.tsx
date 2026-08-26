@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import type { Day } from '../types';
+import { groupById, type TaskGroup } from '../lib/prefs';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
+import { TaskIcon } from './TaskIcon';
 import { TaskRow } from './TaskRow';
+
+/** A line offered from last week, and the group it was filed under then. */
+export type Suggestion = { label: string; groupId: string | null };
 
 type Props = {
   day: Day;
@@ -10,6 +15,10 @@ type Props = {
   onLabelChange: (taskId: string, label: string) => void;
   onDelete: (taskId: string) => void;
   onAdd: () => string;
+  groups: TaskGroup[];
+  onGroupChange: (taskId: string, groupId: string | null) => void;
+  /** Undefined at the group cap — see MAX_GROUPS. */
+  onRequestNewGroup?: (taskId: string) => void;
   /**
    * What this weekday held last week, minus anything already on it this week.
    *
@@ -19,9 +28,9 @@ type Props = {
    * enough to read, and "Finish your homework" was never going to be as
    * useful as the thing you actually wrote last Monday.
    */
-  suggestions: string[];
-  onUseSuggestion: (label: string) => void;
-  onUseAllSuggestions: (labels: string[]) => void;
+  suggestions: Suggestion[];
+  onUseSuggestion: (suggestion: Suggestion) => void;
+  onUseAllSuggestions: (suggestions: Suggestion[]) => void;
 };
 
 /**
@@ -40,6 +49,9 @@ export function DayCard({
   onLabelChange,
   onDelete,
   onAdd,
+  groups,
+  onGroupChange,
+  onRequestNewGroup,
   suggestions,
   onUseSuggestion,
   onUseAllSuggestions,
@@ -90,6 +102,11 @@ export function DayCard({
               onToggle={() => onToggle(task.id)}
               onLabelChange={(label) => onLabelChange(task.id, label)}
               onDelete={() => onDelete(task.id)}
+              groups={groups}
+              onGroupChange={(groupId) => onGroupChange(task.id, groupId)}
+              onRequestNewGroup={
+                onRequestNewGroup ? () => onRequestNewGroup(task.id) : undefined
+              }
               onContinue={() => setFocusId(onAdd())}
             />
           ))}
@@ -123,19 +140,30 @@ export function DayCard({
               <p className="text-xs text-frost-text-faint">last {day.label}</p>
 
               <div className="mt-2 flex flex-col items-start gap-0.5">
-                {suggestions.map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => onUseSuggestion(label)}
-                    className="flex items-center gap-2 py-1 text-left text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
-                  >
-                    <span className="font-mono" aria-hidden="true">
-                      +
-                    </span>
-                    {label}
-                  </button>
-                ))}
+                {suggestions.map((suggestion) => {
+                  const group = groupById(groups, suggestion.groupId);
+                  return (
+                    <button
+                      key={suggestion.label}
+                      type="button"
+                      onClick={() => onUseSuggestion(suggestion)}
+                      className="flex items-center gap-2 py-1 text-left text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
+                    >
+                      <span className="font-mono" aria-hidden="true">
+                        +
+                      </span>
+                      {suggestion.label}
+                      {/* Shown because taking the offer keeps the group too.
+                          An offer that arrived unmarked and landed marked
+                          would be doing something it never said it would. */}
+                      {group && (
+                        <span className="shrink-0 opacity-70" title={group.name}>
+                          <TaskIcon icon={group.icon} size={13} strokeWidth={2} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {suggestions.length > 1 && (

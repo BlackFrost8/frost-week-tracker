@@ -1,7 +1,8 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
 import type { DayId } from '../types';
 import { auth, db } from './firebase';
-import { DAY_IDS } from './week';
+import { DEFAULT_ICON, isKnownIcon, type IconId } from './icons';
+import { DAY_IDS, uid as newId } from './week';
 
 /**
  * Account preferences, as opposed to device preferences.
@@ -25,11 +26,40 @@ export type StandingTask = {
   label: string;
   /** Days this task is seeded into. Empty means it is parked, not deleted. */
   days: DayId[];
+  /** Carried onto every task this seeds, so a routine keeps its group. */
+  groupId: string | null;
 };
+
+/**
+ * A named bucket a task can belong to — School, Health, whatever the week is
+ * actually made of.
+ *
+ * Account-level rather than per-week, and deliberately so: a group is a fact
+ * about how you sort your life, not about one seven-day window, and putting it
+ * in the week document would mean February's "School" and March's "School"
+ * were two unrelated things that happened to share a name.
+ *
+ * A group is a name and a shape, and no colour. Every hue in this app is
+ * derived from the user's two theme colours at runtime, so a stored per-group
+ * colour would be the one thing a theme change could not reach — see
+ * `components/TaskIcon.tsx`.
+ */
+export type TaskGroup = {
+  id: string;
+  name: string;
+  /** An id from `lib/icons`. Unknown ids fall back rather than failing. */
+  icon: IconId;
+};
+
+/** Past a dozen, a list you scan to find things becomes a thing to scan. */
+export const MAX_GROUPS = 12;
+export const MAX_GROUP_NAME = 20;
 
 export type Prefs = {
   /** Seeded into each matching day of a newly created week, in this order. */
   defaultTasks: StandingTask[];
+  /** In creation order. Tasks reference these by `id`. */
+  groups: TaskGroup[];
   /**
    * A square data URL, or null to fall back to the Google account photo.
    *
@@ -41,9 +71,27 @@ export type Prefs = {
   avatar: string | null;
 };
 
-export const EMPTY_PREFS: Prefs = { defaultTasks: [], avatar: null };
+export const EMPTY_PREFS: Prefs = { defaultTasks: [], groups: [], avatar: null };
 
 const everyDay = (): DayId[] => [...DAY_IDS];
+
+/** A fresh group, ready to be named. Ids are opaque and never reused. */
+export function makeGroup(name: string, icon: IconId): TaskGroup {
+  return { id: newId(), name: name.trim().slice(0, MAX_GROUP_NAME), icon };
+}
+
+/**
+ * The group a task points at, or null.
+ *
+ * Resolving by lookup — rather than cascading a delete through every stored
+ * week — is what makes deleting a group cheap and safe. A task left pointing
+ * at a group that no longer exists simply reads as ungrouped on every device,
+ * including the ones that were offline when it went.
+ */
+export function groupById(groups: TaskGroup[], id: string | null): TaskGroup | null {
+  if (!id) return null;
+  return groups.find((g) => g.id === id) ?? null;
+}
 
 /* There is deliberately no starter list. A routine you didn't choose is
    someone else's routine, and five tasks you have to delete before you can
@@ -98,7 +146,7 @@ const localKey = (uid: string | null) => (uid ? `frost-week-tracker:prefs:${uid}
 function toStandingTask(raw: unknown): StandingTask | null {
   if (typeof raw === 'string') {
     const label = raw.trim();
-    return label ? { label, days: everyDay() } : null;
+    return label ? { label, days: everyDay(), groupId: null } : null;
   }
   if (typeof raw !== 'object' || raw === null) return null;
 
@@ -112,7 +160,27 @@ function toStandingTask(raw: unknown): StandingTask | null {
     ? DAY_IDS.filter((id) => (r.days as unknown[]).includes(id))
     : everyDay();
 
-  return { label, days };
+  // Never `undefined`: this object is written into a Firestore document as-is,
+  // and `setDoc` refuses undefined field values outright.
+  const groupId = typeof r.groupId === 'string' && r.groupId ? r.groupId : null;
+
+  return { label, days, groupId };
+}
+
+/** Same contract as `toStandingTask`: trusted shape out, or nothing. */
+function toGroup(raw: unknown): TaskGroup | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Partial<TaskGroup>;
+
+  const name = typeof r.name === 'string' ? r.name.trim().slice(0, MAX_GROUP_NAME) : '';
+  if (!name) return null;
+
+  // An id is the only thing tasks hold onto, so a document that somehow lost
+  // one gets a fresh id rather than being dropped — the group survives, its
+  // existing tasks read as ungrouped, which beats losing the group as well.
+  const id = typeof r.id === 'string' && r.id ? r.id : newId();
+
+  return { id, name, icon: isKnownIcon(r.icon) ? r.icon : DEFAULT_ICON };
 }
 
 function normalise(raw: unknown): Prefs {
@@ -126,12 +194,27 @@ function normalise(raw: unknown): Prefs {
         .slice(0, 20)
     : [];
 
+  /* Deduplicated by id. Two groups sharing one id would make `groupById`
+     resolve a task to whichever happened to be first, and the panel would
+     render the same tasks under both names. */
+  const seen = new Set<string>();
+  const groups: TaskGroup[] = [];
+  if (Array.isArray(r.groups)) {
+    for (const entry of r.groups) {
+      if (groups.length >= MAX_GROUPS) break;
+      const group = toGroup(entry);
+      if (!group || seen.has(group.id)) continue;
+      seen.add(group.id);
+      groups.push(group);
+    }
+  }
+
   // Only ever a data URL: a remote URL here would be somewhere else's image
   // loading on every render of the header.
   const avatar =
     typeof r.avatar === 'string' && r.avatar.startsWith('data:image/') ? r.avatar : null;
 
-  return { defaultTasks, avatar };
+  return { defaultTasks, groups, avatar };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -172,7 +255,8 @@ export async function loadPrefs(): Promise<Prefs> {
     if (!snap.exists()) {
       // First sign-in on this account: adopt whatever was set up offline —
       // minus the abandoned seed, which must not be carried into the account.
-      if (local.defaultTasks.length > 0 || local.avatar) await savePrefs(local);
+      if (local.defaultTasks.length > 0 || local.groups.length > 0 || local.avatar)
+        await savePrefs(local);
       return local;
     }
     const cloud = normalise(snap.data());
@@ -249,7 +333,13 @@ export function savePrefs(prefs: Prefs): Promise<void> {
   // rejected promise at the head of the queue and every later save is dropped.
   const write = queued
     .catch(() => {})
-    .then(() => setDoc(prefsDoc(uid), { defaultTasks: clean.defaultTasks, avatar: clean.avatar }));
+    .then(() =>
+      setDoc(prefsDoc(uid), {
+        defaultTasks: clean.defaultTasks,
+        groups: clean.groups,
+        avatar: clean.avatar,
+      }),
+    );
 
   queued = write;
   return write.then(() => {});

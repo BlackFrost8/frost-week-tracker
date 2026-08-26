@@ -7,6 +7,30 @@ import { useToday } from './useToday';
 
 const SAVE_DEBOUNCE_MS = 300;
 
+/** Lower-cased label -> group id, for the standing tasks that name a group. */
+function standingGroups(standing: StandingTask[]): Map<string, string> {
+  const byLabel = new Map<string, string>();
+  for (const t of standing) {
+    const key = t.label.trim().toLowerCase();
+    if (key && t.groupId) byLabel.set(key, t.groupId);
+  }
+  return byLabel;
+}
+
+/**
+ * The task, filed under its standing task's group — or the very same object
+ * back when there is nothing to change.
+ *
+ * Returning the identical reference is load-bearing: it is what lets the
+ * callers above tell a real reconcile from a pass that found nothing, and so
+ * what keeps an idempotent sweep from scheduling a write.
+ */
+function fileFromStanding(task: Task, wanted: Map<string, string>): Task {
+  if (task.groupId) return task;
+  const groupId = wanted.get(task.label.trim().toLowerCase());
+  return groupId ? { ...task, groupId } : task;
+}
+
 /**
  * Owns the current Week and every mutation to it.
  *
@@ -282,8 +306,16 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
       const current = weekRef.current;
       // `ready` matters as much as the week itself here: see readyRef above.
       if (!current || !readyRef.current) return;
-      editSeq.current += 1;
+
+      /* Computed before `editSeq` moves, so a mutation that turns out to be a
+         no-op is free. Reconciling groups from the standing tasks runs on a
+         schedule nobody asked for, and without this it would bump the edit
+         sequence (discarding an in-flight load) and schedule a write on every
+         pass. `fn` is pure, so running it early costs nothing. */
       const next = fn(current);
+      if (next === current) return;
+
+      editSeq.current += 1;
       weekRef.current = next;
       setWeek(next);
       scheduleSave(next);
@@ -324,9 +356,9 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
 
   /** Returns the new row's id so the caller can focus it immediately. */
   const addTask = useCallback(
-    (dayId: DayId, label = '') => {
+    (dayId: DayId, label = '', groupId: string | null = null) => {
       const id = uid();
-      mapDay(dayId, (tasks) => [...tasks, { id, label, done: false }]);
+      mapDay(dayId, (tasks) => [...tasks, { id, label, done: false, groupId }]);
       return id;
     },
     [mapDay],
@@ -334,14 +366,27 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
 
   /** Several at once, as one mutation and therefore one save. */
   const addTasks = useCallback(
-    (dayId: DayId, labels: string[]) =>
+    (dayId: DayId, incoming: { label: string; groupId: string | null }[]) =>
       mapDay(dayId, (tasks) => [
         ...tasks,
-        ...labels
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .map((label) => ({ id: uid(), label, done: false })),
+        ...incoming
+          .map((t) => ({ ...t, label: t.label.trim() }))
+          .filter((t) => t.label !== '')
+          .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId })),
       ]),
+    [mapDay],
+  );
+
+  /**
+   * Moves one task into a group, or out of every group with `null`.
+   *
+   * The task keeps its id, so this is a genuine re-file rather than a
+   * delete-and-recreate — a checked task stays checked, and it stays exactly
+   * where it was in the day's order.
+   */
+  const setTaskGroup = useCallback(
+    (dayId: DayId, taskId: string, groupId: string | null) =>
+      mapDay(dayId, (tasks) => tasks.map((t) => (t.id === taskId ? { ...t, groupId } : t))),
     [mapDay],
   );
 
@@ -369,14 +414,59 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
       mutate((w) => ({
         ...w,
         days: w.days.map((day) => {
-          const have = new Set(day.tasks.map((t) => t.label.trim().toLowerCase()));
+          /* Existing rows are filed before the missing ones are added. A task
+             the week already holds is exactly the case "add these" used to
+             skip entirely, so setting a group on a standing task did nothing
+             for the routine already on the board. Filing a row is not adding
+             one, so the "only ever adds" promise below is intact. */
+          const existing = day.tasks.map((task) =>
+            fileFromStanding(task, standingGroups(standing)),
+          );
+          const have = new Set(existing.map((t) => t.label.trim().toLowerCase()));
           const missing = standingTasksFor(standing, day.id)
-            .map((l) => l.trim())
-            .filter((l) => l && !have.has(l.toLowerCase()))
-            .map((label) => ({ id: uid(), label, done: false }));
-          return missing.length ? { ...day, tasks: [...day.tasks, ...missing] } : day;
+            .map((t) => ({ ...t, label: t.label.trim() }))
+            .filter((t) => t.label && !have.has(t.label.toLowerCase()))
+            .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
+          return { ...day, tasks: missing.length ? [...existing, ...missing] : existing };
         }),
       })),
+    [mutate],
+  );
+
+  /**
+   * Files tasks that are already on the board under the group their standing
+   * task names — without adding, removing or renaming anything.
+   *
+   * Standing tasks are only ever seeded when a week is *created*, so a group
+   * added to one afterwards reached nothing that already existed: you set the
+   * mark, and the week you were looking at didn't change. That is what this
+   * closes.
+   *
+   * Only tasks carrying no group at all are touched, so an instance you
+   * deliberately re-filed somewhere else this week keeps where you put it.
+   * Returns the week unchanged when there is nothing to do, which is what lets
+   * `mutate` skip the write.
+   */
+  const applyStandingGroups = useCallback(
+    (standing: StandingTask[]) =>
+      mutate((w) => {
+        const wanted = standingGroups(standing);
+        if (wanted.size === 0) return w;
+
+        let changed = false;
+        const days = w.days.map((day) => {
+          let dayChanged = false;
+          const tasks = day.tasks.map((task) => {
+            const filed = fileFromStanding(task, wanted);
+            if (filed !== task) dayChanged = true;
+            return filed;
+          });
+          if (!dayChanged) return day;
+          changed = true;
+          return { ...day, tasks };
+        });
+        return changed ? { ...w, days } : w;
+      }),
     [mutate],
   );
 
@@ -423,9 +513,11 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     addTask,
     addTasks,
     removeTask,
+    setTaskGroup,
     setMeta,
     clearChecks,
     applyStandingTasks,
+    applyStandingGroups,
     flush,
   };
 }

@@ -18,63 +18,71 @@ const SECTIONS: { title: string; items: string[] }[] = [
   {
     title: 'Your week',
     items: [
-      'Pick a day from the strip along the top — each cell fills up as that day gets done.',
-      'Move between weeks with the arrows, or open the date to jump to any week you’ve used.',
-      '"today" appears whenever you’ve wandered off the current week.',
-      'A new week starts empty unless you’ve set standing tasks.',
+      'Pick a day from the strip along the top.',
+      'Move between weeks with the arrows, or open the date to jump to any week.',
+      '"today" appears when you’ve wandered off the current week.',
     ],
   },
   {
     title: 'Tasks',
     items: [
-      'Add a task with "+ add task", then type. Enter saves it, Escape throws it away.',
+      'Add a task with "+ add task". Enter saves it, Escape throws it away.',
       'An empty day offers what you did on it last week, in grey. Click one to bring it forward.',
-      'Click anywhere on a row to tick it off. Hover a row to edit or delete it.',
-      'Clearing a task’s text deletes the row, so a half-added task never gets stuck.',
+      'Click a row to tick it off. Hover a row to edit or delete it.',
+      'Clearing a task’s text deletes the row.',
+    ],
+  },
+  {
+    title: 'Groups',
+    items: [
+      'Make a group in the groups panel — a name and a mark from the icon library.',
+      'File a task with the tag button on its row, or while you type it.',
+      'The group’s mark shows next to the task, and its bar tracks the week.',
+      'Open a group to see everything in it, and click a task to jump to its day.',
     ],
   },
   {
     title: 'Standing tasks',
     items: [
       'Open your picture (or "sign in") and set the tasks you do regularly.',
-      'They’re added to every new week automatically, so you stop retyping your routine.',
-      'Switch off the days a task doesn’t apply to — gym on Monday, Wednesday, Friday only.',
-      '"add these to this week" drops them into the week you’re already in. It only ever adds.',
+      'They’re added to every new week automatically.',
+      'Switch off the days a task doesn’t apply to, and give it a group to carry.',
+      '"add these to this week" drops them into the week you’re already in.',
     ],
   },
   {
     title: 'This week',
     items: [
-      'Set a focus, a reward and an affirmation for the week in the side panel.',
-      'The ring shows how much of the whole week is done; the curve shows your pace across it.',
-      '"clear checks" unticks everything but keeps all the text — useful for a repeating week.',
+      'Set a focus, a reward and an affirmation in the side panel.',
+      'The ring shows how much of the week is done; the curve shows your pace.',
+      '"clear checks" unticks everything and keeps the text.',
     ],
   },
   {
     title: 'Timer',
     items: [
       'The clock in the header doubles as a stopwatch and a countdown.',
-      'Switch between counting up and counting down, and add or remove minutes before you start.',
-      'Expand it to fill the screen when you want it visible across the room.',
-      'It stays on this device and is never synced — a timer is about the room you’re in.',
+      'Switch between counting up and down, and add or remove minutes before you start.',
+      'Expand it to fill the screen.',
+      'It stays on this device.',
     ],
   },
   {
     title: 'Making it yours',
     items: [
       'Click the name in the top left to change the theme.',
-      'The whole app is built from two colours, so any theme recolours everything at once.',
-      'Rename it too — the name you choose becomes the app’s wordmark.',
-      'Themes stay on this device, so you can run one at school and another at home.',
+      'The whole app is built from two colours.',
+      'Rename it — the name becomes the wordmark.',
+      'Themes stay on this device.',
     ],
   },
   {
     title: 'Your account',
     items: [
       'Sign in with Google, or an email and password if popups are blocked.',
-      'Everything saves automatically and follows you to any device you sign in from.',
-      'Anything you made before signing in is brought into your account for you.',
-      'Set a profile picture from your device, or use the one on your Google account.',
+      'Everything saves automatically.',
+      'Anything you made before signing in is brought into your account.',
+      'Set a profile picture from your device, or use your Google one.',
     ],
   },
 ];
@@ -149,9 +157,6 @@ export function InfoDialog() {
               <h2 className="font-display text-lg tracking-tight text-frost-text">
                 What you can do
               </h2>
-              <p className="mt-2 text-sm leading-relaxed text-frost-text-dim">
-                Everything here is already on screen somewhere. This is just the map.
-              </p>
 
               <div className="mt-7 flex flex-col gap-7">
                 {SECTIONS.map((section) => (
