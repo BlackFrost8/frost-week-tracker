@@ -415,7 +415,6 @@ body {
    ever fails, transparent text would erase the app's name. */
 .frost-wordmark {
   color: var(--color-frost-cyan-200);
-  transition: filter 150ms ease-out;
 }
 
 @supports (background-clip: text) or (-webkit-background-clip: text) {
@@ -432,9 +431,9 @@ body {
   }
 }
 
-.frost-wordmark:hover {
-  filter: brightness(1.18);
-}
+/* No hover state: the mark is the app's name and nothing else now. A heading
+   that lit up under the cursor was promising a click that no longer does
+   anything — the theme opens from the settings button instead. */
 
 /* ── Fields — underline, not box (§1.2: stop boxing everything) ───────────── */
 .frost-field {

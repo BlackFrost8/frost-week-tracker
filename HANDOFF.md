@@ -169,7 +169,8 @@ src/
 └── components/
     ├── AmbientBackground  Fixed black canvas, cyan wash, 110 drifting motes
     ├── Clock              Wall clock + two-mode timer + portalled focus view
-    ├── ThemeDialog        Presets + advanced two-colour picker, behind the wordmark
+    ├── ThemeDialog        Presets + two-colour picker, opened by SettingsButton
+    ├── SettingsButton     The gear: header on desktop, bottom-right on a phone
     ├── WeekStrip          The 7 days, horizontal. Selects; does not expand
     ├── DayCard            The focal card — shows whichever day is selected
     ├── HeroPanel          The signature element — owns the only looping glow
@@ -318,9 +319,15 @@ Don't "fix" these without reading why.
     hardcoded in a component any more** — a literal `#00efff` or
     `rgba(0,239,255,…)` is invisible to theming and will simply stay cyan while
     everything around it changes. Use the tokens, or
-    `rgb(var(--frost-accent-rgb) / a)` when you need an alpha.
+    `rgb(var(--frost-accent-rgb) / a)` when you need an alpha. **Tailwind's own
+    colour utilities are the same trap in shorter clothing**: `hover:bg-white/5`
+    in the week selector was a white tint that vanished on every light preset,
+    which is the one surface where a hover state has to do the most work. Reach
+    for `bg-[rgb(var(--frost-far-rgb)/0.05)]` — `far` is white on a dark theme
+    and black on a light one, so it dims in whichever direction is away from
+    the canvas.
 22. **A theme is two colours; the other thirteen are derived.** Presets and the
-    advanced picker both feed one `{primary, accent}` pair through
+    two-colour picker both feed one `{primary, accent}` pair through
     `deriveTheme`. Every text tier is mixed *towards the end of the scale
     opposite the canvas*, which is what makes a light primary flip the whole app
     to dark text with no `if (light)` anywhere in a component. Don't add
@@ -466,10 +473,13 @@ The 16 borders are 5 checkbox squares + 8 hairline dividers + 3 input underlines
     task" the round-trip deleted the empty row you were about to type into.
     The dialog unmounts the component when it closes, so initialising state
     from the prop is the only sync required.
-28. **`uppercase` lives on the wordmark's `<button>`, not its `<h1>`.** A
-    button does not inherit `text-transform`, so on the h1 it silently did
-    nothing and the mark rendered as "Frost". Keeping it on exactly one
-    element also keeps the §6 uppercase count at 1 — don't put it on both.
+28. **`uppercase` lives on the wordmark's `<h1>`, and the mark is not a
+    control.** It sat on a `<button>` while the wordmark opened the theme,
+    because a button does not inherit `text-transform` — on the h1 it silently
+    did nothing and the mark rendered as "Frost". The theme moved to the
+    settings gear and the button went with it, so the h1 carries it again.
+    Keep it on exactly one element either way: that is what holds the §6
+    uppercase count at 1.
 29. **Michroma is loaded for the wordmark alone.** One weight, no italic,
     which is fine for five letters. Space Grotesk is the fallback so a blocked
     font CDN — plausible on a school network — degrades to the previous look
@@ -521,24 +531,61 @@ The 16 borders are 5 checkbox squares + 8 hairline dividers + 3 input underlines
     the loudest thing in the panel. Opacity means the same thing on every
     preset.
 
-39. **A group set on a standing task files the matching tasks already on the
-    board.** Standing tasks are seeded only when a week is *created*, so
-    without this you set the mark and the week in front of you didn't change —
-    the reported bug. `applyStandingGroups` in `useWeek` fills in tasks
-    carrying no group at all; it never adds, removes, renames, or overwrites a
-    group set on one instance by hand.
-40. **App diffs the standing list and passes only the entries whose group
-    changed.** Handing `applyStandingGroups` the whole list made every standing
+39. **Changing a standing task's group re-files the matching tasks already on
+    the board — in both directions.** Standing tasks are seeded only when a
+    week is *created*, so without this you set the mark and the week in front
+    of you didn't change. `applyStandingGroups` in `useWeek` never adds,
+    removes or renames anything; it only moves tasks between groups, and only
+    ones that are either unfiled or still sitting in the group the standing
+    task *used to* name. That second clause is the whole rule: an instance you
+    moved somewhere else by hand this week is never overruled.
+40. **App diffs the standing list and passes `{label, from, to}`, not the
+    list.** Handing `applyStandingGroups` the whole list made every standing
     edit re-file every matching task, so taking one task out of a group by hand
     held only until you next touched an unrelated standing task — a control
-    that silently undid itself. The first map seen after load is recorded
-    without being applied, because prefs arrive async and every load starts as
-    `[]`; reading that as an edit would re-file on every refresh.
+    that silently undid itself. `from` is what earned un-filing: with only the
+    new value, the sweep could either overwrite everything or refuse to touch
+    anything already filed, and it chose the latter — so choosing "no group"
+    left every instance on the board still wearing the old mark, with nothing
+    but seven visits to seven days to clear it. That was the reported bug.
+    The first map seen after load is recorded without being applied, because
+    prefs arrive async and every load starts as `[]`; reading that as an edit
+    would re-file on every refresh. The baseline is also **dropped** whenever
+    `ready` or the week goes false — the next list to arrive belongs to a
+    different session, and diffing across a sign-in would file this week's
+    tasks into another account's group ids.
 41. **`mutate` returns early when `fn` hands back the same week reference.**
     That is what makes an idempotent reconcile free — no bumped `editSeq`
     (which would discard an in-flight load) and no scheduled write. The helpers
     it depends on return identical references when they change nothing, so
     don't "tidy" them into always spreading a new object.
+
+42. **The theme opens from the settings gear, and the wordmark is only a
+    name.** Putting it behind the mark meant the only way to find it was to
+    try clicking a heading. The gear renders twice — in the header from `sm`
+    up, fixed bottom-right below it, mirroring the info button opposite — and
+    each hides at the breakpoint the other takes over, so exactly one is ever
+    on screen. `.frost-wordmark` lost its `:hover` for the same reason: a
+    heading that lit up under the cursor promised a click that does nothing.
+43. **`ThemeDialog` has no "advanced" disclosure.** Two colours and a name is
+    not advanced, and hiding it behind that word hid the more interesting half
+    of the feature. Everything shows at once in a `max-w-md` panel; the
+    dialog's `overflow-y-auto` + `my-auto` is what keeps `done` reachable now
+    that it is always the taller layout.
+44. **Replacing a preset does not strip it from anyone using it.** `Coffee`
+    became `Nature`, and a device still holding `presetId: 'coffee'` keeps its
+    exact colours and name — `loadTheme` stores the spec, so it simply reads
+    as a custom theme with no preset row highlighted. Verified in-browser.
+    Don't add a migration that "fixes" those devices onto a preset they never
+    chose.
+45. **A new preset has to clear the §6 contrast floor, not just look right.**
+    Nature's first accent (`#4ade80`) derived a `cyan-500` of 4.30 against its
+    own canvas — under 4.5, and that tier is text (`today`, `clear checks`,
+    panel labels). `#57e88f` takes it to 4.68. Measure before shipping one.
+46. **`applyStandingTasks` builds its label→group map once per sweep.** It was
+    being rebuilt inside `day.tasks.map`, so "add these to this week" on a
+    seventy-row week built the same Map seventy times. Harmless in effect and
+    pointless in fact — hoist anything derived from `standing` above the walk.
 
 ---
 

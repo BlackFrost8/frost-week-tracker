@@ -5,7 +5,7 @@ import { useDialog } from '../hooks/useDialog';
 /**
  * What the app can do, in one place.
  *
- * Everything here is discoverable by poking around — the wordmark opens the
+ * Everything here is discoverable by poking around — the gear opens the
  * theme, the avatar opens the account — but "discoverable" and "discovered"
  * are different things, and a sparse interface hides its own depth. This is
  * the one screen allowed to explain, which is what keeps every other screen
@@ -70,9 +70,9 @@ const SECTIONS: { title: string; items: string[] }[] = [
   {
     title: 'Making it yours',
     items: [
-      'Click the name in the top left to change the theme.',
+      'Open settings — the gear beside the clock, or bottom right on a phone.',
       'The whole app is built from two colours.',
-      'Rename it — the name becomes the wordmark.',
+      'Rename it — the name becomes the wordmark in the corner.',
       'Themes stay on this device.',
     ],
   },
