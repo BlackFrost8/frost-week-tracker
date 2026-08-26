@@ -4,6 +4,7 @@ import type { Profile } from '../hooks/useAuth';
 import { addDays, currentWeekStart, fromISODate, formatLongDate } from '../lib/week';
 import { Avatar } from './AccountDialog';
 import { Clock } from './Clock';
+import { SettingsButton } from './SettingsButton';
 
 type Props = {
   weekStart: string;
@@ -87,32 +88,34 @@ export function Header({
        what read as disorganised. Below `sm` it is a centred column; from `sm`
        up there is room for the original mark-left / controls-right split. */
     <header className="flex flex-col items-center gap-y-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-6 sm:gap-y-4">
-      {/* The one uppercase, wide-tracked element in the app (§2.3). It is also
-          the theme control — the wordmark is the app's identity, so putting
-          "change how this looks" behind it needs no extra chrome in a header
-          that is deliberately sparse. */}
-      {/* `uppercase` sits on the button, not the h1: a button does not inherit
-          text-transform, so on the h1 it silently did nothing. Keeping it on
-          exactly one element also keeps the §6 uppercase count at 1. */}
-      <h1 className="font-wordmark text-base">
-        <button
-          type="button"
-          onClick={onOpenTheme}
-          className="frost-wordmark uppercase"
-          aria-haspopup="dialog"
-          title="Change the theme"
-          // Michroma is already a wide face, so the old 0.42em would push a
-          // five-letter mark halfway across the header. Longer custom names
-          // tighten further rather than wrapping.
-          style={{ letterSpacing: wordmark.length > 8 ? '0.16em' : '0.28em' }}
-        >
-          {wordmark}
-        </button>
+      {/* The one uppercase, wide-tracked element in the app (§2.3), and now
+          purely the app's name. The theme used to open from here, which meant
+          the only way to find it was to try clicking a heading — plausible
+          once you know, undiscoverable otherwise. It lives on the settings
+          button below instead.
+
+          `uppercase` moved back onto the h1 along with the button's removal.
+          It was on the button because a button does not inherit
+          text-transform; with no button in the way the h1 applies it, and the
+          §6 uppercase count is still exactly 1. */}
+      <h1
+        className="frost-wordmark font-wordmark text-base uppercase"
+        // Michroma is already a wide face, so the old 0.42em would push a
+        // five-letter mark halfway across the header. Longer custom names
+        // tighten further rather than wrapping.
+        style={{ letterSpacing: wordmark.length > 8 ? '0.16em' : '0.28em' }}
+      >
+        {wordmark}
       </h1>
 
       {/* Centred while stacked so each wrapped row is balanced about the same
           axis as the wordmark above it, rather than ragged against the left. */}
       <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 sm:justify-end sm:gap-y-2">
+        {/* First in the cluster, so it reads as chrome for the whole app
+            rather than as something belonging to the clock it sits beside.
+            Hidden below `sm`, where the phone copy in `App` takes over. */}
+        <SettingsButton variant="header" onClick={onOpenTheme} />
+
         <Clock />
 
         <div ref={wrapRef} className="relative flex items-center gap-1">
@@ -145,7 +148,10 @@ export function Header({
                     onGoToWeek(ws);
                     setListOpen(false);
                   }}
-                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-mono text-xs transition-colors duration-150 hover:bg-white/5"
+                  /* `far`, not white. A literal white hover is invisible on
+                     every light preset — the one surface where the row it is
+                     meant to pick out is already near-white. */
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-mono text-xs transition-colors duration-150 hover:bg-[rgb(var(--frost-far-rgb)/0.05)]"
                   style={{ color: ws === weekStart ? 'var(--color-frost-cyan-300)' : 'var(--color-frost-text-dim)' }}
                 >
                   <span>{formatLongDate(ws)}</span>

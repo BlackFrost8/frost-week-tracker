@@ -6,7 +6,7 @@ import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
 import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
-import { useWeek } from './hooks/useWeek';
+import { useWeek, type StandingGroupChange } from './hooks/useWeek';
 import {
   cloudStore,
   clearAccountCache,
@@ -29,6 +29,7 @@ import { GroupPanel } from './components/GroupPanel';
 import { AccountDialog } from './components/AccountDialog';
 import { GroupDialog } from './components/GroupDialog';
 import { InfoDialog } from './components/InfoDialog';
+import { SettingsButton } from './components/SettingsButton';
 import { ThemeDialog } from './components/ThemeDialog';
 
 export default function App() {
@@ -143,6 +144,7 @@ export default function App() {
      precisely what made the theme-name box unusable, and there is no reason
      to leave the trap armed for the next effect that needs one of these. */
   const closeAccount = useCallback(() => setAccountOpen(false), []);
+  const openTheme = useCallback(() => setThemeOpen(true), []);
   const closeTheme = useCallback(() => setThemeOpen(false), []);
   const closeGroupEdit = useCallback(() => setGroupEdit(null), []);
 
@@ -197,19 +199,25 @@ export default function App() {
   }, [weekLoaded, weekStart, todayId]);
 
   /**
-   * Giving a standing task a group files the tasks already on the board.
+   * Changing a standing task's group re-files the tasks already on the board.
    *
    * Standing tasks are seeded only when a week is *created*, so before this the
    * mark you had just chosen reached next week and nothing you could see. The
-   * reconcile itself lives in `useWeek` and only ever fills in a task carrying
-   * no group; what lives here is *which* standing tasks are allowed to do it,
-   * and when.
+   * reconcile itself lives in `useWeek`; what lives here is *which* standing
+   * tasks changed, and what they changed from.
    *
-   * Only the entries whose group actually changed in this edit are passed on.
+   * Only the entries whose group actually moved in this edit are passed on.
    * Handing over the whole list instead would make every edit re-file every
    * matching task — so taking one task out of a group by hand held until you
    * next touched an unrelated standing task, and then silently undid itself.
    * Diffing means a change to "water" cannot disturb "strength training".
+   *
+   * Both directions travel. Clearing a standing task's group used to be
+   * dropped here on the grounds that a sweep must never overrule you, which
+   * meant choosing "no group" left every instance on the week still wearing
+   * the old mark and nothing to remove it with but seven visits to seven
+   * days. The previous group goes along with the new one instead, so the
+   * reconcile can leave alone anything you had moved elsewhere yourself.
    *
    * The first map seen is recorded without being applied. Prefs arrive
    * asynchronously, so every load starts as `[]` and then becomes the real
@@ -227,17 +235,29 @@ export default function App() {
   const appliedStanding = useRef<Record<string, string | null> | null>(null);
 
   useEffect(() => {
-    if (!ready || !weekLoaded) return;
+    if (!ready || !weekLoaded) {
+      /* Forget the baseline rather than keep it. The next list to arrive
+         belongs to a different session — signing in, signing out — and its
+         groups are a different account's ids entirely, so diffing the two
+         would file this week's tasks into groups that were never ours. A
+         fresh sighting is the honest reading of it. */
+      appliedStanding.current = null;
+      return;
+    }
     const previous = appliedStanding.current;
     appliedStanding.current = standingGroupMap;
     if (previous === null) return;
 
-    // A group being *removed* from a standing task is deliberately not a
-    // change worth acting on: this only ever files, it never un-files.
-    const changed = prefs.defaultTasks.filter((task) => {
-      const key = task.label.trim().toLowerCase();
-      return key && task.groupId && previous[key] !== task.groupId;
-    });
+    const changed: StandingGroupChange[] = [];
+    for (const task of prefs.defaultTasks) {
+      const label = task.label.trim().toLowerCase();
+      if (!label) continue;
+      // A label that wasn't in the list before reads as "was in no group",
+      // which is what a newly typed standing task in fact was.
+      const from = previous[label] ?? null;
+      if (from === task.groupId) continue;
+      changed.push({ label, from, to: task.groupId });
+    }
     if (changed.length > 0) applyStandingGroups(changed);
   }, [ready, weekLoaded, standingGroupMap, applyStandingGroups, prefs.defaultTasks]);
 
@@ -438,7 +458,7 @@ export default function App() {
           profile={profile}
           avatar={prefs.avatar}
           onOpenAccount={() => setAccountOpen(true)}
-          onOpenTheme={() => setThemeOpen(true)}
+          onOpenTheme={openTheme}
           wordmark={theme.name}
         />
 
@@ -559,6 +579,13 @@ export default function App() {
       {/* Owns its own open state — nothing else in the app needs to know, and
           the button is part of the feature rather than a separate control. */}
       <InfoDialog />
+
+      {/* The phone half of the settings control. Below `sm` the header stacks
+          and centres, which is no place for a control reached for
+          occasionally, so it moves to the corner opposite the info button. Its
+          twin in the header hides at the same breakpoint this one appears, so
+          only ever one is on screen. */}
+      <SettingsButton variant="floating" onClick={openTheme} />
     </>
   );
 }

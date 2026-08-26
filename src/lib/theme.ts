@@ -49,10 +49,13 @@ export const PRESETS: Preset[] = [
     spec: { primary: '#f4f6f8', accent: '#2f6df6' },
   },
   {
-    id: 'coffee',
-    name: 'Coffee',
-    note: 'dark roast, warm crema',
-    spec: { primary: '#150f0b', accent: '#c98a52' },
+    id: 'nature',
+    name: 'Nature',
+    note: 'deep forest, new growth',
+    /* #4ade80 was the obvious green and derived a `cyan-500` of 4.30 against
+       its own canvas — under the 4.5 floor for text, and that tier carries
+       `today`, `clear checks` and the panel labels. Lifted until it clears. */
+    spec: { primary: '#0a1410', accent: '#57e88f' },
   },
 ];
 

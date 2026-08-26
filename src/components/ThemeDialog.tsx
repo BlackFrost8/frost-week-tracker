@@ -91,7 +91,6 @@ function ColourField({
 
 export function ThemeDialog({ open, onClose, theme }: Props) {
   const { presetId, name, spec, selectPreset, setCustom, setName, reset } = theme;
-  const [advanced, setAdvanced] = useState(false);
 
   // Escape, focus containment and focus restoration all live in the hook.
   const panelRef = useDialog(open, onClose);
@@ -104,10 +103,10 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
 
   return (
     <div
-      // `overflow-y-auto` + `my-auto` on the panel: with "advanced" open, or
-      // with a phone keyboard covering half the screen while editing a hex
-      // value, this dialog is taller than the viewport and "done" sat below
-      // the fold with no way to reach it.
+      // `overflow-y-auto` + `my-auto` on the panel: with every control on show
+      // at once, or with a phone keyboard covering half the screen while
+      // editing a hex value, this dialog is taller than the viewport and
+      // "done" sat below the fold with no way to reach it.
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-5"
       style={{ backgroundColor: 'rgb(var(--frost-base-rgb) / 0.72)', backdropFilter: 'blur(6px)' }}
       onClick={onClose}
@@ -118,7 +117,7 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7 focus:outline-none"
+        className="frost-rise my-auto w-full max-w-md rounded-2xl p-8 focus:outline-none"
         style={{
           background:
             'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',
@@ -157,34 +156,28 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
           })}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setAdvanced((v) => !v)}
-          aria-expanded={advanced}
-          className="mt-5 text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
-        >
-          {advanced ? 'hide advanced' : 'advanced — pick your own'}
-        </button>
+        {/* Was behind an "advanced" disclosure, which hid the more interesting
+            half of the feature behind a word that reads as a warning. Two
+            colours and a name is not advanced, and a preset is only a starting
+            point for them — showing both at once says so. */}
+        <div className="frost-divider mt-7 flex flex-col gap-4 pt-6">
+          <span className="text-xs text-frost-cyan-500">your own</span>
 
-        {advanced && (
-          <div className="mt-5 flex flex-col gap-4">
-            {colourField('primary', spec.primary, (primary) => setCustom({ primary }))}
-            {colourField('accent', spec.accent, (accent) => setCustom({ accent }))}
+          {colourField('primary', spec.primary, (primary) => setCustom({ primary }))}
+          {colourField('accent', spec.accent, (accent) => setCustom({ accent }))}
 
-            <label className="flex items-center justify-between gap-4">
-              <span className="text-sm text-frost-text-dim">name</span>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={MAX_THEME_NAME}
-                placeholder="Frost"
-                aria-label="Theme name — becomes the wordmark"
-                className="frost-field w-[14ch] text-right text-sm"
-              />
-            </label>
-
-          </div>
-        )}
+          <label className="flex items-center justify-between gap-4">
+            <span className="text-sm text-frost-text-dim">name</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={MAX_THEME_NAME}
+              placeholder="Frost"
+              aria-label="Theme name — becomes the wordmark"
+              className="frost-field w-[14ch] text-right text-sm"
+            />
+          </label>
+        </div>
 
         <button
           type="button"
