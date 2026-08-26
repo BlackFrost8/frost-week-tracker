@@ -111,13 +111,20 @@ export function formatLongDate(iso: string): string {
  * ways to add a task. A day now contains only real tasks; the single `+ add
  * task` button appends the one blank row that is being typed into.
  */
-function makeTasks(starter: string[]): Task[] {
-  return starter.map((label) => ({ id: uid(), label, done: false }));
+function makeTasks(starter: StandingTask[]): Task[] {
+  return starter.map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
 }
 
-/** The standing tasks that belong to one day, in the order they were listed. */
-export function standingTasksFor(standing: StandingTask[], day: DayId): string[] {
-  return standing.filter((t) => t.days.includes(day)).map((t) => t.label);
+/**
+ * The standing tasks that belong to one day, in the order they were listed.
+ *
+ * Returns the whole `StandingTask`, not just its label: a routine carries the
+ * group it belongs to, and dropping that here would mean the tasks that make
+ * up most of a week — the ones seeded automatically — were the only ones that
+ * could never be grouped.
+ */
+export function standingTasksFor(standing: StandingTask[], day: DayId): StandingTask[] {
+  return standing.filter((t) => t.days.includes(day));
 }
 
 /**
@@ -204,6 +211,32 @@ export function weekTotals(week: Week): { done: number; total: number } {
   return { done, total };
 }
 
+/** One task, plus the day it sits on — what the group panel actually shows. */
+export type GroupedTask = { day: Day; task: Task };
+
+/**
+ * Every real task in this week that belongs to `groupId`, Monday first.
+ *
+ * Derived on read like every other stat in this file, rather than kept as an
+ * index on the group. A group holding a list of task ids would need updating
+ * from seven places and would go stale the moment a week was edited on another
+ * device; a filter over the week that is already in memory cannot.
+ */
+export function groupTasks(week: Week, groupId: string): GroupedTask[] {
+  const found: GroupedTask[] = [];
+  for (const day of week.days) {
+    for (const task of day.tasks) {
+      if (task.groupId === groupId && task.label.trim() !== '') found.push({ day, task });
+    }
+  }
+  return found;
+}
+
+export function groupTotals(week: Week, groupId: string): { done: number; total: number } {
+  const tasks = groupTasks(week, groupId);
+  return { done: tasks.filter((t) => t.task.done).length, total: tasks.length };
+}
+
 /* ── Validation ────────────────────────────────────────────────────────────
    Anything arriving from localStorage or the network is untrusted: it may be
    from an older schema, hand-edited, or truncated. Normalise it into a
@@ -229,6 +262,11 @@ export function normalizeWeek(raw: unknown, weekStart: string): Week {
             id: typeof t.id === 'string' ? t.id : uid(),
             label: typeof t.label === 'string' ? t.label : '',
             done: t.done === true,
+            /* Normalised to null, never left undefined. Every week is written
+               back to Firestore verbatim and `setDoc` rejects undefined field
+               values, so a task loaded from a document written before groups
+               existed would otherwise fail the next save outright. */
+            groupId: typeof t.groupId === 'string' && t.groupId ? t.groupId : null,
           }))
           .filter((t) => t.label.trim() !== '')
       : [];

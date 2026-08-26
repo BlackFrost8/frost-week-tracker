@@ -156,7 +156,8 @@ src/
 │   ├── firebase.ts        App / auth / Firestore Lite handles; null when unconfigured
 │   ├── firebase-config.ts The six pasted values — the only setup step in the app
 │   ├── theme.ts           Presets + the colour maths that derives a whole palette
-│   └── prefs.ts           Standing tasks: local-first, mirrored to the account
+│   ├── icons.ts           38 monoline glyphs as path data, for group marks
+│   └── prefs.ts           Standing tasks + task groups: local-first, mirrored
 ├── hooks/
 │   ├── useAuth.ts         Session state + Profile, Google + email sign in/out,
 │   │                      linkPassword() to repair a wiped password (§5.32)
@@ -175,7 +176,11 @@ src/
     ├── PaceCurve          Cumulative done vs even pace. Line only, no fill
     ├── IntentPanel        Focus/Reward/Affirmation as statements + clear checks
     ├── ProgressRing       variant: 'hero' | 'quiet'
-    ├── TaskRow            Checkbox + inline-editable label
+    ├── TaskRow            Checkbox + inline-editable label + group mark
+    ├── GroupPanel         Groups, their week progress, and what is in them
+    ├── GroupMenu          The popover that files one task into a group
+    ├── GroupDialog        Name + icon-library picker, for making and editing
+    ├── TaskIcon           One glyph from lib/icons, in currentColor
     ├── Header             Wordmark, week nav, profile (avatar + first name)
     ├── AccountDialog      Google sign-in + profile card; also exports `Avatar`
     └── GoogleMark         The official "G", used inside our own button
@@ -189,9 +194,9 @@ are `DayCard`, `WeekStrip` and `IntentPanel` now. Don't resurrect them.
 ```
               ┌──────────────── header ────────────────┐   96px below
               ├────────────── WeekStrip ───────────────┤   full bleed, 7 cells
-  xl:  [ HeroPanel + PaceCurve ] [ DayCard ] [ IntentPanel ]
-  md:  [ DayCard ]               [ Hero / Curve / Intent stacked right ]
-  sm:  Hero → DayCard → PaceCurve → IntentPanel, single column
+  xl:  [ HeroPanel + PaceCurve ] [ DayCard ] [ IntentPanel + GroupPanel ]
+  md:  [ DayCard ]               [ Hero / Curve / Intent+Groups stacked right ]
+  sm:  Hero → DayCard → PaceCurve → IntentPanel → GroupPanel, single column
 ```
 
 The shell is `.frost-shell` (plain CSS in `index.css`, **not** utilities) at
@@ -481,6 +486,60 @@ The 16 borders are 5 checkbox squares + 8 hairline dividers + 3 input underlines
     same pair. An earlier version walked the three down the accent ramp, which
     looked like a ranking of focus over affirmation — an order that doesn't
     exist. Don't reintroduce a per-field gradient there.
+32. **`linkPassword()` repairs a password that signing in with Google wiped.**
+    Referenced from §4 and §8; the decision itself was never written down. Fill
+    this in from `hooks/useAuth.ts` before those two cross-references rot.
+33. **Groups live in prefs, tasks hold only a group's id.** A group outlives
+    any one week, so it cannot live in the week document — and storing its name
+    or icon on the task would mean renaming "School" had to rewrite every week
+    ever saved. Deleting a group cascades into nothing: `groupById` resolves a
+    dead id to null on read, on every device, including ones that were offline
+    when it went.
+34. **`Task.groupId` is `string | null`, never optional.** Week documents are
+    written to Firestore verbatim and `setDoc` rejects `undefined` field values
+    outright, so an unassigned task must carry an explicit null. `normalizeWeek`
+    and `toStandingTask` both force this; don't relax either to `?:`.
+35. **Groups have no colour, only a mark.** Every hue is derived from the user's
+    two theme colours at runtime, so a stored per-group colour would be the one
+    thing on screen a theme change could not reach. Icons stroke in
+    `currentColor` and inherit whatever tier they sit in — which is also why
+    `lib/icons.ts` is hand-drawn path data rather than an icon package.
+36. **The task row's group trigger always wears a plain tag, never the group's
+    own glyph.** The mark beside the label already reports which group it is;
+    a trigger mirroring it made one row show the same icon twice. Trigger is
+    the verb, mark is the answer. `GroupMenu`'s `showCurrent` prop switches
+    this, and is true everywhere the row shows no mark of its own.
+37. **`TaskRow`'s edit field skips its blur commit when focus moves inside the
+    row.** A brand-new row has an empty draft and `commit` deletes those, so an
+    unguarded blur deleted the row the instant the group button beside it was
+    clicked. `GroupMenu` closes on `pointerdown` rather than `click` for the
+    same reason — a click listener fires after the mousedown has already blurred
+    the field.
+38. **`GroupPanel` fades done rows by opacity, not by dropping a ramp tier.**
+    On a light theme the accent ramp runs the other way — 500 mixes toward
+    black and lands *darker* than 100 — so a colour swap made completed tasks
+    the loudest thing in the panel. Opacity means the same thing on every
+    preset.
+
+39. **A group set on a standing task files the matching tasks already on the
+    board.** Standing tasks are seeded only when a week is *created*, so
+    without this you set the mark and the week in front of you didn't change —
+    the reported bug. `applyStandingGroups` in `useWeek` fills in tasks
+    carrying no group at all; it never adds, removes, renames, or overwrites a
+    group set on one instance by hand.
+40. **App diffs the standing list and passes only the entries whose group
+    changed.** Handing `applyStandingGroups` the whole list made every standing
+    edit re-file every matching task, so taking one task out of a group by hand
+    held only until you next touched an unrelated standing task — a control
+    that silently undid itself. The first map seen after load is recorded
+    without being applied, because prefs arrive async and every load starts as
+    `[]`; reading that as an edit would re-file on every refresh.
+41. **`mutate` returns early when `fn` hands back the same week reference.**
+    That is what makes an idempotent reconcile free — no bumped `editSeq`
+    (which would discard an in-flight load) and no scheduled write. The helpers
+    it depends on return identical references when they change nothing, so
+    don't "tidy" them into always spreading a new object.
+
 ---
 
 ## 7. Testing traps in this environment
@@ -571,6 +630,12 @@ to trust those.
 - **`PaceCurve` returns `null` when the week has no tasks at all** ([PaceCurve.tsx:22](src/components/PaceCurve.tsx:22)),
   so the left rail is short on a genuinely empty week. Since the app now *starts*
   empty rather than seeded, this is the first-run desktop state, not an edge case.
+- **The row tools are three 24px targets on touch.** Groups added a third
+  button beside edit and delete, and on a phone all three are permanently
+  visible at ~28px pitch — under the 44px touch minimum the week strip is held
+  to. `group` is placed furthest from `delete`, so a mis-tap lands on `edit`
+  rather than on the one destructive control. Worth revisiting as a row-level
+  overflow menu if it bites.
 - **Multi-week analytics, habit streaks, native app** — all explicitly out of scope.
 
 ### Still unseen

@@ -126,9 +126,6 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-display text-lg tracking-tight text-frost-text">Theme</h2>
-        <p className="mt-2 text-sm leading-relaxed text-frost-text-dim">
-          Changes everything at once, and stays on this device.
-        </p>
 
         <div className="mt-6 flex flex-col gap-1">
           {PRESETS.map((preset) => {
@@ -186,11 +183,6 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
               />
             </label>
 
-            <p className="text-xs leading-relaxed text-frost-text-faint">
-              Surfaces, text tiers and the accent ramp are all derived from those two colours, so a
-              light primary flips the whole app to dark text on its own. The name replaces the
-              wordmark in the corner.
-            </p>
           </div>
         )}
 

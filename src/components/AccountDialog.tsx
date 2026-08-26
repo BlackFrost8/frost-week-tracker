@@ -11,9 +11,10 @@ import {
 import { useDialog } from '../hooks/useDialog';
 import { fileToAvatar } from '../lib/avatar';
 import { isCloudConfigured } from '../lib/firebase';
-import type { StandingTask } from '../lib/prefs';
+import type { StandingTask, TaskGroup } from '../lib/prefs';
 import { DAY_IDS, DAY_LABELS, DAY_SHORT } from '../lib/week';
 import { GoogleMark } from './GoogleMark';
+import { GroupMenu } from './GroupMenu';
 
 type Props = {
   open: boolean;
@@ -23,6 +24,7 @@ type Props = {
   defaultTasks: StandingTask[];
   onSaveDefaultTasks: (tasks: StandingTask[]) => void;
   onApplyToWeek: (tasks: StandingTask[]) => void;
+  groups: TaskGroup[];
   avatar: string | null;
   onSaveAvatar: (avatar: string | null) => void;
   /** Re-read the signed-in user after a credential changes under us. */
@@ -45,10 +47,12 @@ function StandingTasks({
   tasks,
   onSave,
   onApplyToWeek,
+  groups,
 }: {
   tasks: StandingTask[];
   onSave: (tasks: StandingTask[]) => void;
   onApplyToWeek: (tasks: StandingTask[]) => void;
+  groups: TaskGroup[];
 }) {
   const [draft, setDraft] = useState<StandingTask[]>(tasks);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,6 +126,9 @@ function StandingTasks({
 
   const removeAt = (i: number) => setDraft((d) => d.filter((_, idx) => idx !== i));
 
+  const setGroupAt = (i: number, groupId: string | null) =>
+    setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
+
   const toggleDay = (i: number, day: DayId) =>
     setDraft((d) =>
       d.map((t, idx) =>
@@ -141,10 +148,7 @@ function StandingTasks({
   return (
     <div className="mt-7">
       <h3 className="text-sm text-frost-text">Standing tasks</h3>
-      <p className="mt-1.5 text-xs leading-relaxed text-frost-text-faint">
-        Seeded into a new week, so you stop retyping your routine. Switch off the days a task
-        doesn't belong on. Weeks you've already started are left alone.
-      </p>
+      <p className="mt-1.5 text-xs text-frost-text-faint">Added to each new week.</p>
 
       <div className="mt-4 flex flex-col gap-5">
         {draft.map((task, i) => (
@@ -156,6 +160,18 @@ function StandingTasks({
                 placeholder="Something you do every day"
                 aria-label={`Standing task ${i + 1}`}
                 className="frost-field min-w-0 flex-1 text-sm"
+              />
+              {/* Deliberately no "new group" item: this dialog is already
+                  open, and a second one stacked on top of it would trap focus
+                  between two panels that each restore it on close. Groups are
+                  made in the panel on the main screen. */}
+              <GroupMenu
+                groups={groups}
+                value={task.groupId}
+                onSelect={(groupId) => setGroupAt(i, groupId)}
+                subject={task.label || `standing task ${i + 1}`}
+                className="-m-2 h-9 w-9 shrink-0"
+                size={15}
               />
               <button
                 type="button"
@@ -212,7 +228,9 @@ function StandingTasks({
         {draft.length < 20 && (
           <button
             type="button"
-            onClick={() => setDraft((d) => [...d, { label: '', days: [...DAY_IDS] }])}
+            onClick={() =>
+              setDraft((d) => [...d, { label: '', days: [...DAY_IDS], groupId: null }])
+            }
             className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
           >
             + add a standing task
@@ -502,6 +520,7 @@ export function AccountDialog({
   defaultTasks,
   onSaveDefaultTasks,
   onApplyToWeek,
+  groups,
   avatar,
   onSaveAvatar,
   onAccountChanged,
@@ -606,16 +625,14 @@ export function AccountDialog({
                 hasn't been set up. The steps live in src/lib/firebase-config.ts
                 and README.md — the person who needs them is reading the repo,
                 not this dialog. */}
-            <p className="mt-2 text-sm leading-relaxed text-frost-text-dim">
-              Your weeks are saved here in this browser. Signing in isn’t set up on this copy of
-              the app.
-            </p>
+            <p className="mt-2 text-sm text-frost-text-dim">Signing in isn’t set up here.</p>
 
             <span className="frost-divider mt-7 block" />
             <StandingTasks
               tasks={defaultTasks}
               onSave={onSaveDefaultTasks}
               onApplyToWeek={onApplyToWeek}
+              groups={groups}
             />
 
             <button
@@ -635,9 +652,6 @@ export function AccountDialog({
         {isCloudConfigured && !profile && (
           <>
             <h2 className="font-display text-lg tracking-tight text-frost-text">Sign in</h2>
-            <p className="mt-2 text-sm leading-relaxed text-frost-text-dim">
-              Your weeks follow you to any device you sign in from.
-            </p>
 
             <button
               type="button"
@@ -760,6 +774,7 @@ export function AccountDialog({
               tasks={defaultTasks}
               onSave={onSaveDefaultTasks}
               onApplyToWeek={onApplyToWeek}
+              groups={groups}
             />
 
             <button

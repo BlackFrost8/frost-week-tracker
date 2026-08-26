@@ -2,6 +2,19 @@ export type Task = {
   id: string;
   label: string;
   done: boolean;
+  /**
+   * The group this task belongs to, or null. Points at a `TaskGroup.id` in the
+   * account's prefs — groups outlive any one week, so they can't live in the
+   * week document, and a task carrying the group's name or icon inline would
+   * mean renaming "School" had to rewrite every week you ever wrote.
+   *
+   * `null` rather than optional on purpose: these objects are written straight
+   * into a Firestore document, and `setDoc` rejects `undefined` outright. An
+   * unassigned task must therefore carry an explicit null, not a missing key.
+   * A pointer at a group that has since been deleted simply renders as
+   * ungrouped — see `groupById` in `lib/prefs.ts`.
+   */
+  groupId: string | null;
 };
 
 export type Day = {

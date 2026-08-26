@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task } from '../types';
+import { groupById, type TaskGroup } from '../lib/prefs';
+import { GroupMenu } from './GroupMenu';
+import { TaskIcon } from './TaskIcon';
 
 type Props = {
   task: Task;
   onToggle: () => void;
   onLabelChange: (label: string) => void;
   onDelete: () => void;
+  /** Every group on the account, for the picker. */
+  groups: TaskGroup[];
+  onGroupChange: (groupId: string | null) => void;
+  /**
+   * Opens the group dialog, and files this task into whatever it makes.
+   * Undefined at the group cap, where the picker simply stops offering it.
+   */
+  onRequestNewGroup?: () => void;
   /** Compact rows are used inside collapsed (non-today) days. */
   dense?: boolean;
   /** Set on the row `+ add task` just created, so it is typable immediately. */
@@ -24,6 +35,9 @@ export function TaskRow({
   onToggle,
   onLabelChange,
   onDelete,
+  groups,
+  onGroupChange,
+  onRequestNewGroup,
   dense = false,
   autoFocus = false,
   onContinue,
@@ -32,6 +46,9 @@ export function TaskRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.label);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  const group = groupById(groups, task.groupId);
 
   // A one-shot pop when the box becomes checked. Checking a task is the core
   // verb of the app and used to produce less feedback than saving the metadata
@@ -80,18 +97,25 @@ export function TaskRow({
 
   if ((isBlank && !editing) || editing) {
     return (
-      <div className={`flex items-center gap-3 ${pad}`}>
+      <div ref={rowRef} className={`flex items-center gap-3 ${pad}`}>
         <span
           className="h-[18px] w-[18px] shrink-0 rounded-[4px]"
           style={{ border: '1px solid rgb(var(--frost-accent-rgb) / 0.18)' }}
           aria-hidden="true"
         />
         <input
-          ref={editing ? inputRef : undefined}
+          ref={inputRef}
           autoFocus={autoFocus}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
+          /* Committing on any blur at all would delete this row the instant
+             the group button beside it was clicked — a brand-new row still has
+             an empty draft, and `commit` removes those. Focus moving anywhere
+             inside the row is the user still working on it, not leaving it. */
+          onBlur={(e) => {
+            if (rowRef.current?.contains(e.relatedTarget as Node | null)) return;
+            commit();
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               const carriedOn = draft.trim() !== '';
@@ -107,7 +131,22 @@ export function TaskRow({
           }}
           placeholder="Add a task"
           aria-label={editing ? 'Edit task' : 'New task'}
-          className="w-full bg-transparent text-sm text-frost-text outline-none placeholder:text-frost-text-faint"
+          className="min-w-0 flex-1 bg-transparent text-sm text-frost-text outline-none placeholder:text-frost-text-faint"
+        />
+
+        {/* Filing happens while the task is being written, which is the moment
+            you actually know what it is. Focus returns to the field afterwards
+            so a row can be named and filed without touching it twice. */}
+        <GroupMenu
+          groups={groups}
+          value={task.groupId}
+          onSelect={(groupId) => {
+            onGroupChange(groupId);
+            inputRef.current?.focus();
+          }}
+          onNewGroup={onRequestNewGroup}
+          subject={draft.trim() || 'this task'}
+          className="h-6 w-6 shrink-0"
         />
       </div>
     );
@@ -119,7 +158,7 @@ export function TaskRow({
         type="button"
         role="checkbox"
         aria-checked={task.done}
-        aria-label={task.label}
+        aria-label={group ? `${task.label} — ${group.name}` : task.label}
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
@@ -153,13 +192,34 @@ export function TaskRow({
         )}
       </button>
 
-      <span
-        className={`min-w-0 flex-1 truncate text-sm transition-colors duration-150 ${
-          task.done ? 'text-frost-text-faint line-through' : 'text-frost-text'
-        }`}
-        title={task.label}
-      >
-        {task.label}
+      {/* Label and mark share one flexible box so the mark sits against the end
+          of the text rather than being pushed to the far edge of the row —
+          it is part of reading the task, not a column of its own. */}
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span
+          className={`truncate text-sm transition-colors duration-150 ${
+            task.done ? 'text-frost-text-faint line-through' : 'text-frost-text'
+          }`}
+          title={task.label}
+        >
+          {task.label}
+        </span>
+
+        {/* Read-only here. The group is announced as part of the checkbox's
+            label above, so repeating it as an image would say it twice. */}
+        {group && (
+          <span
+            className="shrink-0 transition-colors duration-150"
+            style={{
+              color: task.done
+                ? 'var(--color-frost-text-faint)'
+                : 'var(--color-frost-cyan-300)',
+            }}
+            title={group.name}
+          >
+            <TaskIcon icon={group.icon} size={14} strokeWidth={2} />
+          </span>
+        )}
       </span>
 
       {/* `frost-row-tools` rather than a bare `opacity-0`: transparent is not
@@ -170,6 +230,20 @@ export function TaskRow({
           visible wherever hovering isn't possible, since a control revealed by
           hover alone is a control a touch user cannot find at all. */}
       <span className="frost-row-tools flex shrink-0 items-center gap-1 transition-opacity duration-150">
+        {/* Always the plain tag, never the group's own glyph: the mark beside
+            the label already says which group this is, and a control that
+            mirrors it would make one row show the same icon twice. This one is
+            the verb — file it somewhere. */}
+        <GroupMenu
+          groups={groups}
+          value={task.groupId}
+          onSelect={onGroupChange}
+          onNewGroup={onRequestNewGroup}
+          subject={task.label}
+          showCurrent={false}
+          className="h-6 w-6"
+        />
+
         <button
           type="button"
           onClick={(e) => {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DayId } from './types';
-import type { StandingTask } from './lib/prefs';
+import type { IconId } from './lib/icons';
+import { MAX_GROUPS, groupById, makeGroup, type StandingTask, type TaskGroup } from './lib/prefs';
 import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
 import { usePrefs } from './hooks/usePrefs';
@@ -14,7 +15,7 @@ import {
   migrateLocalToCloud,
 } from './lib/storage';
 import { clearLocalPrefs, flushPrefs } from './lib/prefs';
-import { DAY_IDS, completedCount, weekOverallPct, weekTotals } from './lib/week';
+import { DAY_IDS, completedCount, groupTotals, weekOverallPct, weekTotals } from './lib/week';
 import { useToday } from './hooks/useToday';
 import { paintFavicon } from './lib/favicon';
 import { AmbientBackground } from './components/AmbientBackground';
@@ -23,8 +24,10 @@ import { IntentPanel } from './components/IntentPanel';
 import { HeroPanel } from './components/HeroPanel';
 import { PaceCurve } from './components/PaceCurve';
 import { WeekStrip } from './components/WeekStrip';
-import { DayCard } from './components/DayCard';
+import { DayCard, type Suggestion } from './components/DayCard';
+import { GroupPanel } from './components/GroupPanel';
 import { AccountDialog } from './components/AccountDialog';
+import { GroupDialog } from './components/GroupDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { ThemeDialog } from './components/ThemeDialog';
 
@@ -39,6 +42,21 @@ export default function App() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [migratedUid, setMigratedUid] = useState<string | null>(null);
+
+  /**
+   * What the group dialog is currently for.
+   *
+   * `assignTo` is the whole reason this is a shape rather than a boolean: the
+   * dialog is reachable from the picker on a task row, and a group made from
+   * there has to end up holding that task. Without it, making a group mid-flow
+   * meant creating it, closing the dialog, reopening the picker and choosing
+   * the thing you had just made — three steps to finish one.
+   */
+  const [groupEdit, setGroupEdit] = useState<
+    | { mode: 'new'; assignTo: { dayId: DayId; taskId: string } | null }
+    | { mode: 'edit'; group: TaskGroup }
+    | null
+  >(null);
 
   const signedIn = mode === 'signed-in';
   const uid = profile?.uid ?? null;
@@ -74,9 +92,11 @@ export default function App() {
     addTask,
     addTasks,
     removeTask,
+    setTaskGroup,
     setMeta,
     clearChecks,
     applyStandingTasks,
+    applyStandingGroups,
     flush,
   } = useWeek(store, ready, prefs.defaultTasks);
 
@@ -112,6 +132,10 @@ export default function App() {
     (avatar: string | null) => void updatePrefs({ avatar }),
     [updatePrefs],
   );
+  const saveGroups = useCallback(
+    (groups: TaskGroup[]) => void updatePrefs({ groups }),
+    [updatePrefs],
+  );
 
   /* Stable, because the dialogs manage focus and a changing handler identity
      is a reason to re-run that. `useDialog` no longer depends on these, so
@@ -120,6 +144,17 @@ export default function App() {
      to leave the trap armed for the next effect that needs one of these. */
   const closeAccount = useCallback(() => setAccountOpen(false), []);
   const closeTheme = useCallback(() => setThemeOpen(false), []);
+  const closeGroupEdit = useCallback(() => setGroupEdit(null), []);
+
+  const openEditGroup = useCallback(
+    (group: TaskGroup) => setGroupEdit({ mode: 'edit', group }),
+    [],
+  );
+
+  /* The cap is enforced here rather than by letting the save fall on the floor:
+     `normalise` slices the stored list, so a thirteenth group would be built,
+     briefly assigned to a task, and then silently vanish on the next load. */
+  const canAddGroup = prefs.groups.length < MAX_GROUPS;
 
   // Not `todayISO()` during render: that is right only until midnight, and a
   // tab left focused overnight never re-rendered to notice. See useToday.
@@ -160,6 +195,51 @@ export default function App() {
     if (!weekLoaded) return;
     setSelected(todayId ?? 'mon');
   }, [weekLoaded, weekStart, todayId]);
+
+  /**
+   * Giving a standing task a group files the tasks already on the board.
+   *
+   * Standing tasks are seeded only when a week is *created*, so before this the
+   * mark you had just chosen reached next week and nothing you could see. The
+   * reconcile itself lives in `useWeek` and only ever fills in a task carrying
+   * no group; what lives here is *which* standing tasks are allowed to do it,
+   * and when.
+   *
+   * Only the entries whose group actually changed in this edit are passed on.
+   * Handing over the whole list instead would make every edit re-file every
+   * matching task — so taking one task out of a group by hand held until you
+   * next touched an unrelated standing task, and then silently undid itself.
+   * Diffing means a change to "water" cannot disturb "strength training".
+   *
+   * The first map seen is recorded without being applied. Prefs arrive
+   * asynchronously, so every load starts as `[]` and then becomes the real
+   * list — reading that as an edit would re-file on every single refresh.
+   */
+  const standingGroupMap = useMemo(() => {
+    const byLabel: Record<string, string | null> = {};
+    for (const task of prefs.defaultTasks) {
+      const key = task.label.trim().toLowerCase();
+      if (key) byLabel[key] = task.groupId;
+    }
+    return byLabel;
+  }, [prefs.defaultTasks]);
+
+  const appliedStanding = useRef<Record<string, string | null> | null>(null);
+
+  useEffect(() => {
+    if (!ready || !weekLoaded) return;
+    const previous = appliedStanding.current;
+    appliedStanding.current = standingGroupMap;
+    if (previous === null) return;
+
+    // A group being *removed* from a standing task is deliberately not a
+    // change worth acting on: this only ever files, it never un-files.
+    const changed = prefs.defaultTasks.filter((task) => {
+      const key = task.label.trim().toLowerCase();
+      return key && task.groupId && previous[key] !== task.groupId;
+    });
+    if (changed.length > 0) applyStandingGroups(changed);
+  }, [ready, weekLoaded, standingGroupMap, applyStandingGroups, prefs.defaultTasks]);
 
   /* The tab carries the app's identity, and the app's identity is whatever the
      theme is called — including a name typed by hand in the advanced picker.
@@ -280,10 +360,21 @@ export default function App() {
      and becomes a second list to read. */
   const lastWeekDay = previousWeek?.days.find((d) => d.id === selectedDay.id) ?? null;
   const alreadyHere = new Set(selectedDay.tasks.map((t) => t.label.trim().toLowerCase()));
-  const suggestions = (lastWeekDay?.tasks ?? [])
-    .map((t) => t.label.trim())
-    .filter((label) => label && !alreadyHere.has(label.toLowerCase()))
-    .slice(0, 6);
+  const offered = new Set<string>();
+  const suggestions: Suggestion[] = [];
+  for (const task of lastWeekDay?.tasks ?? []) {
+    if (suggestions.length === 6) break;
+    const label = task.label.trim();
+    const key = label.toLowerCase();
+    // Deduped as well as filtered: two identical lines last Monday would
+    // otherwise offer the same words twice, under the same React key.
+    if (!label || alreadyHere.has(key) || offered.has(key)) continue;
+    offered.add(key);
+    /* Resolved rather than copied. A task from last week can point at a group
+       that has since been deleted, and an offer carrying a dead id would land
+       as a task nothing can show and nothing can find. */
+    suggestions.push({ label, groupId: groupById(prefs.groups, task.groupId)?.id ?? null });
+  }
 
   const handlers = {
     onToggle: (taskId: string) => toggleTask(selectedDay.id, taskId),
@@ -291,9 +382,44 @@ export default function App() {
       setTaskLabel(selectedDay.id, taskId, label),
     onDelete: (taskId: string) => removeTask(selectedDay.id, taskId),
     onAdd: () => addTask(selectedDay.id),
+    groups: prefs.groups,
+    onGroupChange: (taskId: string, groupId: string | null) =>
+      setTaskGroup(selectedDay.id, taskId, groupId),
+    // Undefined at the cap, which is how the picker knows to stop offering it.
+    onRequestNewGroup: canAddGroup
+      ? (taskId: string) =>
+          setGroupEdit({ mode: 'new', assignTo: { dayId: selectedDay.id, taskId } })
+      : undefined,
     suggestions,
-    onUseSuggestion: (label: string) => void addTask(selectedDay.id, label),
-    onUseAllSuggestions: (labels: string[]) => addTasks(selectedDay.id, labels),
+    onUseSuggestion: (s: Suggestion) => void addTask(selectedDay.id, s.label, s.groupId),
+    onUseAllSuggestions: (items: Suggestion[]) => addTasks(selectedDay.id, items),
+  };
+
+  const saveGroup = (name: string, icon: IconId) => {
+    if (!groupEdit) return;
+    if (groupEdit.mode === 'edit') {
+      // Renaming or re-marking a group changes nothing about the tasks: they
+      // hold its id, never its name, so every week it has ever touched follows.
+      saveGroups(
+        prefs.groups.map((g) => (g.id === groupEdit.group.id ? { ...g, name, icon } : g)),
+      );
+      return;
+    }
+    if (!canAddGroup) return;
+    const group = makeGroup(name, icon);
+    saveGroups([...prefs.groups, group]);
+    if (groupEdit.assignTo) {
+      setTaskGroup(groupEdit.assignTo.dayId, groupEdit.assignTo.taskId, group.id);
+    }
+  };
+
+  /* Nothing cascades into the weeks. A task pointing at a group that is gone
+     resolves to null on read (`groupById`), on every device, including the ones
+     that were offline when it went — which is both cheaper and more correct
+     than rewriting every stored week to strip an id. */
+  const deleteGroup = () => {
+    if (groupEdit?.mode !== 'edit') return;
+    saveGroups(prefs.groups.filter((g) => g.id !== groupEdit.group.id));
   };
 
   return (
@@ -379,8 +505,23 @@ export default function App() {
               <PaceCurve week={week} today={today} />
             </div>
 
-            <div className="md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
+            {/* One column, two blocks, 48px apart — the block-to-block step
+                from the spacing cadence (§6). Groups sit under the week's
+                intentions because both answer "what is this week for", at
+                different resolutions: the three lines say why, the groups say
+                where the work went. */}
+            <div className="flex flex-col gap-12 md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
               <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
+              <GroupPanel
+                week={week}
+                groups={prefs.groups}
+                selected={selected}
+                onSelectDay={setSelected}
+                onNewGroup={
+                  canAddGroup ? () => setGroupEdit({ mode: 'new', assignTo: null }) : undefined
+                }
+                onEditGroup={openEditGroup}
+              />
             </div>
           </main>
         </div>
@@ -394,12 +535,26 @@ export default function App() {
         defaultTasks={prefs.defaultTasks}
         onSaveDefaultTasks={saveDefaultTasks}
         onApplyToWeek={applyStandingTasks}
+        groups={prefs.groups}
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}
         onAccountChanged={refreshAccount}
       />
 
       <ThemeDialog open={themeOpen} onClose={closeTheme} theme={theme} />
+
+      {/* One instance for making and for editing. It reads its subject from
+          `groupEdit` on open, so the two flows cannot drift apart. */}
+      <GroupDialog
+        open={groupEdit !== null}
+        group={groupEdit?.mode === 'edit' ? groupEdit.group : null}
+        onClose={closeGroupEdit}
+        onSave={saveGroup}
+        onDelete={groupEdit?.mode === 'edit' ? deleteGroup : undefined}
+        taskCount={
+          groupEdit?.mode === 'edit' ? groupTotals(week, groupEdit.group.id).total : 0
+        }
+      />
 
       {/* Owns its own open state — nothing else in the app needs to know, and
           the button is part of the feature rather than a separate control. */}
