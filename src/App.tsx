@@ -15,6 +15,7 @@ import { usePrivacyBlur } from './hooks/usePrivacyBlur';
 import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek, type StandingGroupChange } from './hooks/useWeek';
+import { useUpcomingWeeks } from './hooks/useUpcomingWeeks';
 import {
   cloudStore,
   clearAccountCache,
@@ -175,6 +176,11 @@ export default function App() {
      `normalise` slices the stored list, so a thirteenth group would be built,
      briefly assigned to a task, and then silently vanish on the next load. */
   const canAddGroup = prefs.groups.length < MAX_GROUPS;
+
+  /* Read only when some group actually reports across weeks, so an account
+     that never turns the option on issues no extra reads at all. */
+  const carriesAcross = prefs.groups.some((g) => g.carryAcross);
+  const upcomingWeeks = useUpcomingWeeks(store, ready, knownWeeks, weekStart, carriesAcross);
 
   // Not `todayISO()` during render: that is right only until midnight, and a
   // tab left focused overnight never re-rendered to notice. See useToday.
@@ -433,18 +439,20 @@ export default function App() {
     onUseAllSuggestions: (items: Suggestion[]) => addTasks(selectedDay.id, items),
   };
 
-  const saveGroup = (name: string, icon: IconId) => {
+  const saveGroup = (name: string, icon: IconId, carryAcross: boolean) => {
     if (!groupEdit) return;
     if (groupEdit.mode === 'edit') {
       // Renaming or re-marking a group changes nothing about the tasks: they
       // hold its id, never its name, so every week it has ever touched follows.
       saveGroups(
-        prefs.groups.map((g) => (g.id === groupEdit.group.id ? { ...g, name, icon } : g)),
+        prefs.groups.map((g) =>
+          g.id === groupEdit.group.id ? { ...g, name, icon, carryAcross } : g,
+        ),
       );
       return;
     }
     if (!canAddGroup) return;
-    const group = makeGroup(name, icon);
+    const group = makeGroup(name, icon, carryAcross);
     saveGroups([...prefs.groups, group]);
     if (groupEdit.assignTo) {
       setTaskGroup(groupEdit.assignTo.dayId, groupEdit.assignTo.taskId, group.id);
@@ -564,6 +572,7 @@ export default function App() {
               <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
               <GroupPanel
                 week={week}
+                upcomingWeeks={upcomingWeeks}
                 groups={prefs.groups}
                 selected={selected}
                 onSelectDay={setSelected}

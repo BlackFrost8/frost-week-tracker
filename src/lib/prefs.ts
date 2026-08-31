@@ -49,6 +49,18 @@ export type TaskGroup = {
   name: string;
   /** An id from `lib/icons`. Unknown ids fall back rather than failing. */
   icon: IconId;
+  /**
+   * Whether this group also reports what is filed under it in later weeks.
+   *
+   * Off by default, because most groups are a way of sorting the seven days in
+   * front of you and a list that reached past them would be noise. It is on
+   * for the groups that hold work with a deadline — a test three weeks out is
+   * not something you want to rediscover on the Monday it lands.
+   *
+   * It changes what a group *shows*, never what it contains: nothing is copied
+   * forward and no task moves. The task stays on the day it was written on.
+   */
+  carryAcross: boolean;
 };
 
 /** Past a dozen, a list you scan to find things becomes a thing to scan. */
@@ -95,8 +107,8 @@ export const EMPTY_PREFS: Prefs = { defaultTasks: [], groups: [], goals: [], ava
 const everyDay = (): DayId[] => [...DAY_IDS];
 
 /** A fresh group, ready to be named. Ids are opaque and never reused. */
-export function makeGroup(name: string, icon: IconId): TaskGroup {
-  return { id: newId(), name: name.trim().slice(0, MAX_GROUP_NAME), icon };
+export function makeGroup(name: string, icon: IconId, carryAcross = false): TaskGroup {
+  return { id: newId(), name: name.trim().slice(0, MAX_GROUP_NAME), icon, carryAcross };
 }
 
 /** A fresh goal. Blank labels are rejected by the caller, not stored. */
@@ -204,7 +216,14 @@ function toGroup(raw: unknown): TaskGroup | null {
   // existing tasks read as ungrouped, which beats losing the group as well.
   const id = typeof r.id === 'string' && r.id ? r.id : newId();
 
-  return { id, name, icon: isKnownIcon(r.icon) ? r.icon : DEFAULT_ICON };
+  // `=== true` rather than a cast: every group saved before this existed has
+  // no such field, and `undefined` must not reach Firestore.
+  return {
+    id,
+    name,
+    icon: isKnownIcon(r.icon) ? r.icon : DEFAULT_ICON,
+    carryAcross: r.carryAcross === true,
+  };
 }
 
 /** Same contract again. `done` is coerced, never left undefined for Firestore. */

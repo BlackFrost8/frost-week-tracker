@@ -9,7 +9,7 @@ type Props = {
   /** The group being edited, or null to make a new one. */
   group: TaskGroup | null;
   onClose: () => void;
-  onSave: (name: string, icon: IconId) => void;
+  onSave: (name: string, icon: IconId, carryAcross: boolean) => void;
   onDelete?: () => void;
   /** How many tasks in the open week point here — said out loud before a delete. */
   taskCount?: number;
@@ -27,6 +27,7 @@ type Props = {
 export function GroupDialog({ open, group, onClose, onSave, onDelete, taskCount = 0 }: Props) {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<IconId>(DEFAULT_ICON);
+  const [carryAcross, setCarryAcross] = useState(false);
   const [query, setQuery] = useState('');
   const [confirming, setConfirming] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,6 +40,7 @@ export function GroupDialog({ open, group, onClose, onSave, onDelete, taskCount 
     if (!open) return;
     setName(group?.name ?? '');
     setIcon(group?.icon ?? DEFAULT_ICON);
+    setCarryAcross(group?.carryAcross ?? false);
     setQuery('');
     setConfirming(false);
   }, [open, group]);
@@ -59,7 +61,7 @@ export function GroupDialog({ open, group, onClose, onSave, onDelete, taskCount 
 
   const submit = () => {
     if (!trimmed) return;
-    onSave(trimmed, icon);
+    onSave(trimmed, icon, carryAcross);
     onClose();
   };
 
@@ -120,6 +122,45 @@ export function GroupDialog({ open, group, onClose, onSave, onDelete, taskCount 
             className="frost-field min-w-0 flex-1 text-lg leading-snug"
           />
         </div>
+
+        {/* Directly under the name, because it is the second half of what a
+            group *is* — the mark below is only how it looks. */}
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={carryAcross}
+          onClick={() => setCarryAcross((v) => !v)}
+          className="mt-6 flex w-full items-center gap-3 text-left"
+        >
+          <span
+            className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] transition-colors duration-150"
+            style={
+              carryAcross
+                ? {
+                    backgroundColor: 'var(--color-frost-cyan-200)',
+                    border: '1px solid var(--color-frost-cyan-200)',
+                  }
+                : {
+                    border: '1px solid rgb(var(--frost-accent-rgb) / 0.22)',
+                    backgroundColor: 'rgb(var(--frost-accent-rgb) / 0.03)',
+                  }
+            }
+          >
+            {carryAcross && (
+              <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" aria-hidden="true">
+                <path
+                  d="M2 6.3 L4.6 8.9 L10 3.4"
+                  fill="none"
+                  stroke="var(--frost-on-accent)"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </span>
+          <span className="text-sm text-frost-text">carry across weeks</span>
+        </button>
 
         <div className="mt-7">
           <div className="flex items-baseline justify-between gap-4">
