@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DayId } from './types';
 import type { IconId } from './lib/icons';
-import { MAX_GROUPS, groupById, makeGroup, type StandingTask, type TaskGroup } from './lib/prefs';
+import {
+  MAX_GROUPS,
+  groupById,
+  makeGroup,
+  type LongTermGoal,
+  type StandingTask,
+  type TaskGroup,
+} from './lib/prefs';
 import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
 import { usePrefs } from './hooks/usePrefs';
@@ -25,6 +32,7 @@ import { HeroPanel } from './components/HeroPanel';
 import { PaceCurve } from './components/PaceCurve';
 import { WeekStrip } from './components/WeekStrip';
 import { DayCard, type Suggestion } from './components/DayCard';
+import { GoalPanel } from './components/GoalPanel';
 import { GroupPanel } from './components/GroupPanel';
 import { AccountDialog } from './components/AccountDialog';
 import { GroupDialog } from './components/GroupDialog';
@@ -135,6 +143,10 @@ export default function App() {
   );
   const saveGroups = useCallback(
     (groups: TaskGroup[]) => void updatePrefs({ groups }),
+    [updatePrefs],
+  );
+  const saveGoals = useCallback(
+    (goals: LongTermGoal[]) => void updatePrefs({ goals }),
     [updatePrefs],
   );
 
@@ -324,7 +336,7 @@ export default function App() {
     return (
       <>
         <AmbientBackground />
-        <div className="relative z-10 grid min-h-screen place-items-center px-6">
+        <div className="relative z-10 grid frost-min-screen place-items-center px-6">
           <div className="flex max-w-sm flex-col items-center gap-5 text-center" role="alert">
             <p className="text-lg text-frost-text">This week didn’t load.</p>
             <p className="text-sm text-frost-text-dim">
@@ -353,7 +365,7 @@ export default function App() {
     return (
       <>
         <AmbientBackground />
-        <div className="relative z-10 grid min-h-screen place-items-center">
+        <div className="relative z-10 grid frost-min-screen place-items-center">
           <div
             className="frost-spin h-6 w-6 rounded-full border border-transparent"
             style={{ borderTopColor: 'var(--color-frost-cyan-500)' }}
@@ -449,7 +461,7 @@ export default function App() {
       {/* 1152px was capping the shell on every desktop, so a 1440p monitor spent
           55% of its width on empty black. The strip below is what earns the extra
           width — no text measure grows. */}
-      <div className="frost-shell relative z-10 flex min-h-screen flex-col gap-16 sm:gap-24">
+      <div className="frost-shell relative z-10 flex frost-min-screen flex-col gap-16 sm:gap-24">
         <Header
           weekStart={weekStart}
           knownWeeks={knownWeeks}
@@ -525,11 +537,11 @@ export default function App() {
               <PaceCurve week={week} today={today} />
             </div>
 
-            {/* One column, two blocks, 48px apart — the block-to-block step
-                from the spacing cadence (§6). Groups sit under the week's
-                intentions because both answer "what is this week for", at
-                different resolutions: the three lines say why, the groups say
-                where the work went. */}
+            {/* One column, three blocks, 48px apart — the block-to-block step
+                from the spacing cadence (§6). The column widens in scope as it
+                falls: the three lines say what this week is for, the groups say
+                where its work went, and the goals say what none of it resets
+                on Monday. */}
             <div className="flex flex-col gap-12 md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
               <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
               <GroupPanel
@@ -542,6 +554,7 @@ export default function App() {
                 }
                 onEditGroup={openEditGroup}
               />
+              <GoalPanel goals={prefs.goals} onSave={saveGoals} />
             </div>
           </main>
         </div>
