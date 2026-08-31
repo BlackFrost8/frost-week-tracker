@@ -512,7 +512,7 @@ export default function App() {
                 Capped and centred rather than filling its column: extra width
                 becomes symmetric gutter instead of a hole to the right of a
                 490px text measure. */}
-            <div className="mx-auto w-full max-w-[660px] md:col-start-1 md:row-start-1 md:row-span-3 xl:col-start-2 xl:row-start-1 xl:row-span-2">
+            <div className="mx-auto w-full max-w-[660px] md:col-start-1 md:row-start-1 md:row-span-2 xl:col-start-2 xl:row-start-1">
               <DayCard
                 day={selectedDay}
                 isToday={selectedDay.date === today}
@@ -521,9 +521,13 @@ export default function App() {
             </div>
 
             {/* Read-only, so their placement can vary across breakpoints without
-                ever disagreeing with keyboard order. The curve is a separate
-                grid item so that on a phone it falls below the card — stacked
-                with the hero it pushed the day's tasks ~230px further down. */}
+                ever disagreeing with keyboard order. The curve shares this cell
+                with the ring rather than taking a grid row of its own: a row is
+                only as short as the tallest thing in it, and the tallest thing
+                beside it is the day card, so the curve used to be pushed to the
+                bottom of a card's worth of height with nothing in between.
+                Below `md` this is still one column, and the card is still
+                first, so nothing about the phone order changes. */}
             <div className="flex flex-col gap-6 md:col-start-2 md:row-start-1 xl:col-start-1 xl:row-start-1">
               <HeroPanel week={week} previousPct={previousPct} />
               {todayDay && (
@@ -531,10 +535,11 @@ export default function App() {
                   <span className="text-frost-cyan-200">+{doneToday}</span> today
                 </p>
               )}
-            </div>
-
-            <div className="md:col-start-2 md:row-start-2 xl:col-start-1 xl:row-start-2">
-              <PaceCurve week={week} today={today} />
+              {/* 24px of gap plus 24px here — the block-to-block step, so the
+                  curve reads as its own panel rather than as the ring's label. */}
+              <div className="mt-6">
+                <PaceCurve week={week} today={today} />
+              </div>
             </div>
 
             {/* One column, three blocks, 48px apart — the block-to-block step
@@ -542,7 +547,7 @@ export default function App() {
                 falls: the three lines say what this week is for, the groups say
                 where its work went, and the goals say what none of it resets
                 on Monday. */}
-            <div className="flex flex-col gap-12 md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
+            <div className="flex flex-col gap-12 md:col-start-2 md:row-start-2 xl:col-start-3 xl:row-start-1">
               <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
               <GroupPanel
                 week={week}
