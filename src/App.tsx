@@ -324,7 +324,7 @@ export default function App() {
     return (
       <>
         <AmbientBackground />
-        <div className="relative z-10 grid min-h-screen place-items-center px-6">
+        <div className="relative z-10 grid frost-min-screen place-items-center px-6">
           <div className="flex max-w-sm flex-col items-center gap-5 text-center" role="alert">
             <p className="text-lg text-frost-text">This week didn’t load.</p>
             <p className="text-sm text-frost-text-dim">
@@ -353,7 +353,7 @@ export default function App() {
     return (
       <>
         <AmbientBackground />
-        <div className="relative z-10 grid min-h-screen place-items-center">
+        <div className="relative z-10 grid frost-min-screen place-items-center">
           <div
             className="frost-spin h-6 w-6 rounded-full border border-transparent"
             style={{ borderTopColor: 'var(--color-frost-cyan-500)' }}
@@ -449,7 +449,7 @@ export default function App() {
       {/* 1152px was capping the shell on every desktop, so a 1440p monitor spent
           55% of its width on empty black. The strip below is what earns the extra
           width — no text measure grows. */}
-      <div className="frost-shell relative z-10 flex min-h-screen flex-col gap-16 sm:gap-24">
+      <div className="frost-shell relative z-10 flex frost-min-screen flex-col gap-16 sm:gap-24">
         <Header
           weekStart={weekStart}
           knownWeeks={knownWeeks}

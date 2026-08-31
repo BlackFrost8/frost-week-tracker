@@ -168,7 +168,7 @@ export function Clock() {
   /** The digits, at whichever size the surface calls for. */
   const face = (big: boolean) => {
     const sizing = big
-      ? { fontSize: 'clamp(64px, 15vw, 200px)', lineHeight: 1 }
+      ? { fontSize: 'clamp(64px, calc(15vw / var(--frost-zoom)), 200px)', lineHeight: 1 }
       : { fontSize: '14px' };
 
     if (editing) {
@@ -321,7 +321,7 @@ export function Clock() {
               <CloseIcon />
             </button>
 
-            <div className="flex w-full max-w-[92vw] flex-col items-center gap-8">
+            <div className="flex w-full max-w-[calc(92vw/var(--frost-zoom))] flex-col items-center gap-8">
               {face(true)}
               <div className="flex items-center gap-5">{controls}</div>
             </div>

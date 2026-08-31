@@ -505,3 +505,42 @@ body {
     padding-block: 40px;
   }
 }
+
+/* ── Large-display scaling ───────────────────────────────────────────────────
+   Nothing here is wider than the shell's 1600px cap, so a display reporting its
+   full 4K width drew the app across 42% of the screen. Wallpaper Engine always
+   reports it — a web wallpaper renders at native resolution — and so does a
+   browser on a 4K monitor left at 100% OS scaling. Both want the same fix.
+
+   Width and height are enough to keep this off everything else. A display the
+   OS has already scaled reports a proportionally smaller viewport, so it never
+   reaches the first step (4K at 150% is 2560px wide); and the height gate
+   excludes the ~110 PPI ultrawides, which are wide without being dense.
+
+   `zoom` rather than a transform: it scales the used value of every length, so
+   layout, hit-testing and `position: fixed` stay correct, with no component
+   knowing it happened. */
+:root {
+  --frost-zoom: 1;
+  zoom: var(--frost-zoom);
+}
+
+/* 4K → 1786x1005 */
+@media (min-width: 3400px) and (min-height: 1700px) {
+  :root { --frost-zoom: 2.15; }
+}
+/* 5K → 1796x1010 */
+@media (min-width: 4600px) and (min-height: 2300px) {
+  :root { --frost-zoom: 2.85; }
+}
+/* 8K → 1807x1016 */
+@media (min-width: 6800px) and (min-height: 3400px) {
+  :root { --frost-zoom: 4.25; }
+}
+
+/* `vh` resolves against the initial containing block, which `zoom` does not
+   scale, so a bare 100vh under a 2.15 scale asks for 2.15 screens of height.
+   `Clock.tsx` divides out the expanded timer's `vw` the same way. */
+.frost-min-screen {
+  min-height: calc(100vh / var(--frost-zoom));
+}
