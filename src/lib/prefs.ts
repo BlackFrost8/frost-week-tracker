@@ -55,11 +55,30 @@ export type TaskGroup = {
 export const MAX_GROUPS = 12;
 export const MAX_GROUP_NAME = 20;
 
+/**
+ * Something you are working toward over months, not days.
+ *
+ * Account-level for the same reason a group is: a goal that reset every Monday
+ * would just be a task with a longer name. It carries no dates and no progress
+ * of its own — the week below it is the progress.
+ */
+export type LongTermGoal = {
+  id: string;
+  label: string;
+  done: boolean;
+};
+
+/** Enough to hold a life's directions; few enough to still be a short list. */
+export const MAX_GOALS = 10;
+export const MAX_GOAL_LABEL = 70;
+
 export type Prefs = {
   /** Seeded into each matching day of a newly created week, in this order. */
   defaultTasks: StandingTask[];
   /** In creation order. Tasks reference these by `id`. */
   groups: TaskGroup[];
+  /** In the order they were written. Nothing else references these. */
+  goals: LongTermGoal[];
   /**
    * A square data URL, or null to fall back to the Google account photo.
    *
@@ -71,13 +90,18 @@ export type Prefs = {
   avatar: string | null;
 };
 
-export const EMPTY_PREFS: Prefs = { defaultTasks: [], groups: [], avatar: null };
+export const EMPTY_PREFS: Prefs = { defaultTasks: [], groups: [], goals: [], avatar: null };
 
 const everyDay = (): DayId[] => [...DAY_IDS];
 
 /** A fresh group, ready to be named. Ids are opaque and never reused. */
 export function makeGroup(name: string, icon: IconId): TaskGroup {
   return { id: newId(), name: name.trim().slice(0, MAX_GROUP_NAME), icon };
+}
+
+/** A fresh goal. Blank labels are rejected by the caller, not stored. */
+export function makeGoal(label: string): LongTermGoal {
+  return { id: newId(), label: label.trim().slice(0, MAX_GOAL_LABEL), done: false };
 }
 
 /**
@@ -183,6 +207,18 @@ function toGroup(raw: unknown): TaskGroup | null {
   return { id, name, icon: isKnownIcon(r.icon) ? r.icon : DEFAULT_ICON };
 }
 
+/** Same contract again. `done` is coerced, never left undefined for Firestore. */
+function toGoal(raw: unknown): LongTermGoal | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Partial<LongTermGoal>;
+
+  const label = typeof r.label === 'string' ? r.label.trim().slice(0, MAX_GOAL_LABEL) : '';
+  if (!label) return null;
+
+  const id = typeof r.id === 'string' && r.id ? r.id : newId();
+  return { id, label, done: r.done === true };
+}
+
 function normalise(raw: unknown): Prefs {
   if (typeof raw !== 'object' || raw === null) return EMPTY_PREFS;
   const r = raw as Partial<Prefs>;
@@ -209,12 +245,26 @@ function normalise(raw: unknown): Prefs {
     }
   }
 
+  /* Deduplicated by id for the same reason groups are, though nothing points
+     at a goal: two sharing one id are two React keys that collide. */
+  const goalIds = new Set<string>();
+  const goals: LongTermGoal[] = [];
+  if (Array.isArray(r.goals)) {
+    for (const entry of r.goals) {
+      if (goals.length >= MAX_GOALS) break;
+      const goal = toGoal(entry);
+      if (!goal || goalIds.has(goal.id)) continue;
+      goalIds.add(goal.id);
+      goals.push(goal);
+    }
+  }
+
   // Only ever a data URL: a remote URL here would be somewhere else's image
   // loading on every render of the header.
   const avatar =
     typeof r.avatar === 'string' && r.avatar.startsWith('data:image/') ? r.avatar : null;
 
-  return { defaultTasks, groups, avatar };
+  return { defaultTasks, groups, goals, avatar };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -255,7 +305,12 @@ export async function loadPrefs(): Promise<Prefs> {
     if (!snap.exists()) {
       // First sign-in on this account: adopt whatever was set up offline —
       // minus the abandoned seed, which must not be carried into the account.
-      if (local.defaultTasks.length > 0 || local.groups.length > 0 || local.avatar)
+      if (
+        local.defaultTasks.length > 0 ||
+        local.groups.length > 0 ||
+        local.goals.length > 0 ||
+        local.avatar
+      )
         await savePrefs(local);
       return local;
     }
@@ -337,6 +392,7 @@ export function savePrefs(prefs: Prefs): Promise<void> {
       setDoc(prefsDoc(uid), {
         defaultTasks: clean.defaultTasks,
         groups: clean.groups,
+        goals: clean.goals,
         avatar: clean.avatar,
       }),
     );
