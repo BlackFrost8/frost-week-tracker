@@ -486,7 +486,7 @@ export default function App() {
 
         {/* Chrome -> work is now the largest interval on the page (96px), and the
             strip groups with the work it orients rather than with the header. */}
-        <div className="flex flex-col gap-12">
+        <div className="frost-week-block flex flex-col gap-12">
           <WeekStrip
             days={week.days}
             selected={selected}
@@ -547,7 +547,7 @@ export default function App() {
                 falls: the three lines say what this week is for, the groups say
                 where its work went, and the goals say what none of it resets
                 on Monday. */}
-            <div className="flex flex-col gap-12 md:col-start-2 md:row-start-2 xl:col-start-3 xl:row-start-1">
+            <div className="frost-side-column flex flex-col gap-12 md:col-start-2 md:row-start-2 xl:col-start-3 xl:row-start-1">
               <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
               <GroupPanel
                 week={week}

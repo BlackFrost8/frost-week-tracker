@@ -525,17 +525,39 @@ body {
   zoom: var(--frost-zoom);
 }
 
-/* 4K → 1786x1005 */
+/* 4K → 1707x960 */
 @media (min-width: 3400px) and (min-height: 1700px) {
-  :root { --frost-zoom: 2.15; }
+  :root { --frost-zoom: 2.25; }
 }
-/* 5K → 1796x1010 */
+/* 5K → 1707x960 */
 @media (min-width: 4600px) and (min-height: 2300px) {
-  :root { --frost-zoom: 2.85; }
+  :root { --frost-zoom: 3; }
 }
-/* 8K → 1807x1016 */
+/* 8K → 1707x960 */
 @media (min-width: 6800px) and (min-height: 3400px) {
-  :root { --frost-zoom: 4.25; }
+  :root { --frost-zoom: 4.5; }
+}
+
+/* At these sizes the page is very often somebody's wallpaper, and a wallpaper
+   cannot be scrolled — whatever falls past the fold is not merely below the
+   fold, it is gone. The vertical cadence therefore steps down one notch so the
+   last panel in the side column stays on screen. Unlayered, so it wins over
+   the Tailwind gap utilities it is overriding without needing to out-specify
+   them. */
+@media (min-width: 3400px) and (min-height: 1700px) {
+  .frost-shell {
+    padding-block: 32px;
+    gap: 64px;
+  }
+  .frost-week-block {
+    gap: 32px;
+  }
+  .frost-side-column {
+    gap: 32px;
+  }
+  .frost-intent-panel {
+    gap: 24px;
+  }
 }
 
 /* `vh` resolves against the initial containing block, which `zoom` does not
