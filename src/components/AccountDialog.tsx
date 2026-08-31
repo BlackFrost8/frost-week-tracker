@@ -15,6 +15,7 @@ import type { StandingTask, TaskGroup } from '../lib/prefs';
 import { DAY_IDS, DAY_LABELS, DAY_SHORT } from '../lib/week';
 import { GoogleMark } from './GoogleMark';
 import { GroupMenu } from './GroupMenu';
+import { LockGlyph } from './PrivacyCurtain';
 
 type Props = {
   open: boolean;
@@ -29,6 +30,8 @@ type Props = {
   onSaveAvatar: (avatar: string | null) => void;
   /** Re-read the signed-in user after a credential changes under us. */
   onAccountChanged: () => void;
+  /** Draws the privacy curtain. The button exists for when Alt+B cannot. */
+  onHideScreen: () => void;
 };
 
 /** Trim, and drop the rows that are still blank. Days are left exactly as set. */
@@ -524,6 +527,7 @@ export function AccountDialog({
   avatar,
   onSaveAvatar,
   onAccountChanged,
+  onHideScreen,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -800,6 +804,22 @@ export function AccountDialog({
             </button>
           </>
         )}
+
+        {/* Outside every branch above, so it is here whether you are signed in,
+            signed out or halfway through the email form. The whole point of it
+            is to work on a keyboard where the shortcut doesn't. */}
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onHideScreen();
+          }}
+          className="mt-6 flex w-full items-center justify-center gap-2.5 text-sm text-frost-text-faint transition-colors hover:text-frost-cyan-300"
+        >
+          <LockGlyph size={14} />
+          hide the screen
+          <span className="font-mono text-xs text-frost-text-faint">alt + b</span>
+        </button>
       </div>
     </div>
   );

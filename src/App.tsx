@@ -11,6 +11,7 @@ import {
 } from './lib/prefs';
 import { useAuth, signOut } from './hooks/useAuth';
 import { useClickRipple } from './hooks/useClickRipple';
+import { usePrivacyBlur } from './hooks/usePrivacyBlur';
 import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek, type StandingGroupChange } from './hooks/useWeek';
@@ -37,6 +38,7 @@ import { GroupPanel } from './components/GroupPanel';
 import { AccountDialog } from './components/AccountDialog';
 import { GroupDialog } from './components/GroupDialog';
 import { InfoDialog } from './components/InfoDialog';
+import { PrivacyCurtain } from './components/PrivacyCurtain';
 import { SettingsButton } from './components/SettingsButton';
 import { ThemeDialog } from './components/ThemeDialog';
 
@@ -46,6 +48,10 @@ export default function App() {
   // Lifted out of ThemeDialog: the header's wordmark renders the theme's
   // name, so both need the same instance of that state.
   const theme = useTheme();
+
+  /* Owned here rather than inside the curtain: the account dialog's button
+     needs to raise it, and the app wrapper below needs to go inert. */
+  const { blurred, toggle: toggleBlur, hide: hideScreen } = usePrivacyBlur();
 
   const { mode, profile, refresh: refreshAccount } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -456,7 +462,14 @@ export default function App() {
 
   return (
     <>
-      <AmbientBackground />
+      {/* `inert` is the other half of the curtain: the overlay stops the
+          pointer, but a caret left blinking in a task row would go on
+          accepting keystrokes straight through the blur, and the one edit you
+          cannot see is the one you make while the screen is hidden.
+          Deliberately not a `filter` on this element — that would make it the
+          containing block for every `position: fixed` child inside it. */}
+      <div inert={blurred}>
+        <AmbientBackground />
 
       {/* 1152px was capping the shell on every desktop, so a 1440p monitor spent
           55% of its width on empty black. The strip below is what earns the extra
@@ -577,6 +590,7 @@ export default function App() {
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}
         onAccountChanged={refreshAccount}
+        onHideScreen={hideScreen}
       />
 
       <ThemeDialog open={themeOpen} onClose={closeTheme} theme={theme} />
@@ -604,6 +618,9 @@ export default function App() {
           twin in the header hides at the same breakpoint this one appears, so
           only ever one is on screen. */}
       <SettingsButton variant="floating" onClick={openTheme} />
+      </div>
+
+      {blurred && <PrivacyCurtain onLift={toggleBlur} />}
     </>
   );
 }
