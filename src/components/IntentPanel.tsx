@@ -70,7 +70,7 @@ export function IntentPanel({ week, onSave, onClearChecks }: Props) {
   };
 
   return (
-    <section className="flex flex-col gap-8" aria-label="This week">
+    <section className="frost-intent-panel flex flex-col gap-8" aria-label="This week">
       {FIELDS.map((f) => {
         const value = week[f.key];
         const isEditing = editing === f.key;

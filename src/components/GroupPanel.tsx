@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import type { DayId, Week } from '../types';
 import type { TaskGroup } from '../lib/prefs';
-import { DAY_SHORT, groupTasks } from '../lib/week';
+import { DAY_SHORT, formatShortDate, groupTasks, upcomingGroupTasks } from '../lib/week';
 import { TaskIcon } from './TaskIcon';
 
 type Props = {
   week: Week;
+  /** Later weeks, already loaded. Empty unless some group carries across. */
+  upcomingWeeks: Week[];
   groups: TaskGroup[];
   selected: DayId;
   onSelectDay: (dayId: DayId) => void;
@@ -30,6 +32,7 @@ type Props = {
  */
 export function GroupPanel({
   week,
+  upcomingWeeks,
   groups,
   selected,
   onSelectDay,
@@ -70,6 +73,13 @@ export function GroupPanel({
         <div className="flex flex-col gap-3">
           {groups.map((group) => {
             const tasks = groupTasks(week, group.id);
+            /* Counted separately from the fraction on the right, and that is
+               the point: every percentage in this app is about the week you
+               are looking at, and a bar that quietly folded in three weeks of
+               future work would be the one that meant something else. */
+            const upcoming = group.carryAcross
+              ? upcomingGroupTasks(upcomingWeeks, group.id).slice(0, 6)
+              : [];
             const done = tasks.filter((t) => t.task.done).length;
             const total = tasks.length;
             const pct = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -159,7 +169,7 @@ export function GroupPanel({
 
                 {isOpen && (
                   <div className="mt-1 flex flex-col gap-0.5">
-                    {total === 0 && (
+                    {total === 0 && upcoming.length === 0 && (
                       <p className="py-1 text-sm text-frost-text-faint">
                         nothing in this group yet
                       </p>
@@ -227,6 +237,75 @@ export function GroupPanel({
                         </span>
                       </button>
                     ))}
+
+                    {upcoming.length > 0 && (
+                      <>
+                        {/* Ruled off rather than merely listed further down: a
+                            date three weeks out among this week's weekdays
+                            reads as something you are behind on, which is the
+                            opposite of what it is. */}
+                        <div className="mt-2 mb-1 flex items-center gap-2">
+                          <span className="text-xs text-frost-cyan-500">upcoming</span>
+                          <span
+                            className="h-px flex-1"
+                            style={{ backgroundColor: 'var(--frost-hairline)' }}
+                          />
+                        </div>
+
+                        {/* Not buttons. Selecting a day only moves the card
+                            within the open week, so a click here could not go
+                            where it appears to promise — these report, and the
+                            week picker in the header is how you travel. */}
+                        {upcoming.map(({ day, task }) => (
+                          <div
+                            key={task.id}
+                            className={`flex items-center gap-2.5 py-1 pr-1 ${
+                              task.done ? 'opacity-55' : ''
+                            }`}
+                          >
+                            <span className="grid h-3 w-3 shrink-0 place-items-center">
+                              {task.done && (
+                                <svg
+                                  viewBox="0 0 12 12"
+                                  className="h-2.5 w-2.5"
+                                  aria-hidden="true"
+                                  style={{ color: 'var(--color-frost-cyan-200)' }}
+                                >
+                                  <path
+                                    d="M2 6.3 L4.6 8.9 L10 3.4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              )}
+                            </span>
+
+                            <span
+                              className={`min-w-0 flex-1 truncate text-sm ${
+                                task.done ? 'line-through' : ''
+                              }`}
+                              style={{ color: 'var(--color-frost-cyan-100)' }}
+                              title={task.label}
+                            >
+                              {task.label}
+                            </span>
+
+                            {/* A date, where this week's rows carry a weekday.
+                                The two never have to be told apart by reading
+                                the label. */}
+                            <span
+                              className="shrink-0 font-mono text-xs"
+                              style={{ color: 'var(--color-frost-text-faint)' }}
+                            >
+                              {formatShortDate(day.date)}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
