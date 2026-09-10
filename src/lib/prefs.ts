@@ -88,9 +88,25 @@ export type Prefs = {
    * instead of needing a second product enabled and a second set of rules.
    */
   avatar: string | null;
+  /**
+   * Whether this account has been shown the tour.
+   *
+   * On the account rather than on the device, because a tour is something a
+   * person has had rather than something a browser has done: signing in on the
+   * school Chromebook after taking it at home should not start it over. The
+   * device keeps its own copy as well (`lib/tour.ts`), for the moment before
+   * an account exists to ask.
+   */
+  tourDone: boolean;
 };
 
-export const EMPTY_PREFS: Prefs = { defaultTasks: [], groups: [], goals: [], avatar: null };
+export const EMPTY_PREFS: Prefs = {
+  defaultTasks: [],
+  groups: [],
+  goals: [],
+  avatar: null,
+  tourDone: false,
+};
 
 const everyDay = (): DayId[] => [...DAY_IDS];
 
@@ -264,7 +280,9 @@ function normalise(raw: unknown): Prefs {
   const avatar =
     typeof r.avatar === 'string' && r.avatar.startsWith('data:image/') ? r.avatar : null;
 
-  return { defaultTasks, groups, goals, avatar };
+  // Anything but an explicit `true` reads as not yet shown, which is the right
+  // answer for every account written before this field existed.
+  return { defaultTasks, groups, goals, avatar, tourDone: r.tourDone === true };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -309,7 +327,8 @@ export async function loadPrefs(): Promise<Prefs> {
         local.defaultTasks.length > 0 ||
         local.groups.length > 0 ||
         local.goals.length > 0 ||
-        local.avatar
+        local.avatar ||
+        local.tourDone
       )
         await savePrefs(local);
       return local;
@@ -394,6 +413,7 @@ export function savePrefs(prefs: Prefs): Promise<void> {
         groups: clean.groups,
         goals: clean.goals,
         avatar: clean.avatar,
+        tourDone: clean.tourDone,
       }),
     );
 

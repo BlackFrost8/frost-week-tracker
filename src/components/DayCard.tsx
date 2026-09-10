@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Day } from '../types';
+import type { Day, DayId } from '../types';
 import { groupById, type TaskGroup } from '../lib/prefs';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
 import { TaskIcon } from './TaskIcon';
@@ -19,6 +19,9 @@ type Props = {
   onGroupChange: (taskId: string, groupId: string | null) => void;
   /** Undefined at the group cap — see MAX_GROUPS. */
   onRequestNewGroup?: (taskId: string) => void;
+  /** Every day of the week, so a task can be sent to one of the other six. */
+  days: Day[];
+  onMoveTask: (taskId: string, toDayId: DayId) => void;
   /**
    * What this weekday held last week, minus anything already on it this week.
    *
@@ -52,6 +55,8 @@ export function DayCard({
   groups,
   onGroupChange,
   onRequestNewGroup,
+  days,
+  onMoveTask,
   suggestions,
   onUseSuggestion,
   onUseAllSuggestions,
@@ -61,8 +66,15 @@ export function DayCard({
   const [focusId, setFocusId] = useState<string | null>(null);
   const isEmpty = day.tasks.length === 0;
 
+  // Computed once for the whole list rather than per row: the day a task is
+  // already on is not a place it can be moved to.
+  const moveTargets = days.filter((d) => d.id !== day.id);
+
   return (
     <section
+      // The tour lights this, not the grid cell around it: that cell spans
+      // three rows and is as tall as the whole right-hand column.
+      data-tour="day"
       className={`frost-rise rounded-2xl p-6 sm:p-8 ${isToday ? 'frost-today-glow' : ''}`}
       style={{
         background: isToday
@@ -107,6 +119,8 @@ export function DayCard({
               onRequestNewGroup={
                 onRequestNewGroup ? () => onRequestNewGroup(task.id) : undefined
               }
+              moveTargets={moveTargets}
+              onMove={(toDayId) => onMoveTask(task.id, toDayId)}
               onContinue={() => setFocusId(onAdd())}
             />
           ))}

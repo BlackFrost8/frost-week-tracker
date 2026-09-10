@@ -611,6 +611,8 @@ export function AccountDialog({
       <div
         ref={panelRef}
         tabIndex={-1}
+        // Named for the tour, which lights whichever dialog is open.
+        data-tour="account-dialog"
         className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7 focus:outline-none"
         style={{
           background:

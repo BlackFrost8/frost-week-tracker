@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Task } from '../types';
+import type { Day, DayId, Task } from '../types';
 import { groupById, type TaskGroup } from '../lib/prefs';
+import { DayMenu } from './DayMenu';
 import { GroupMenu } from './GroupMenu';
 import { TaskIcon } from './TaskIcon';
 
@@ -17,6 +18,9 @@ type Props = {
    * Undefined at the group cap, where the picker simply stops offering it.
    */
   onRequestNewGroup?: () => void;
+  /** The other six days of the week, as places this task can be sent. */
+  moveTargets: Day[];
+  onMove: (dayId: DayId) => void;
   /** Compact rows are used inside collapsed (non-today) days. */
   dense?: boolean;
   /** Set on the row `+ add task` just created, so it is typable immediately. */
@@ -38,6 +42,8 @@ export function TaskRow({
   groups,
   onGroupChange,
   onRequestNewGroup,
+  moveTargets,
+  onMove,
   dense = false,
   autoFocus = false,
   onContinue,
@@ -263,6 +269,17 @@ export function TaskRow({
             />
           </svg>
         </button>
+
+        {/* Between renaming and removing, which is where it belongs: all three
+            are things done to a row that already exists, and moving one is
+            much closer to editing it than to throwing it away. */}
+        <DayMenu
+          days={moveTargets}
+          onSelect={onMove}
+          subject={task.label}
+          className="h-6 w-6"
+        />
+
         <button
           type="button"
           onClick={(e) => {

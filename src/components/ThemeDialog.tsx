@@ -117,6 +117,8 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
       <div
         ref={panelRef}
         tabIndex={-1}
+        // Named for the tour, which opens this dialog and lights it.
+        data-tour="theme-dialog"
         className="frost-rise my-auto w-full max-w-md rounded-2xl p-8 focus:outline-none"
         style={{
           background:
