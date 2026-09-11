@@ -232,6 +232,35 @@ export function groupTasks(week: Week, groupId: string): GroupedTask[] {
   return found;
 }
 
+/** A task filed under a group, in some week other than the one on screen. */
+export type UpcomingTask = {
+  weekStart: string;
+  day: Day;
+  task: Task;
+};
+
+/**
+ * What is filed under a group in the weeks after the one being shown, oldest
+ * first.
+ *
+ * Later weeks only. A group that reported everything it had ever held would be
+ * an archive, and the question this answers is the opposite one — what is
+ * coming that I cannot see yet. Weeks are only written once they are edited,
+ * so in practice this reads the handful somebody has planned ahead.
+ */
+export function upcomingGroupTasks(weeks: Week[], groupId: string): UpcomingTask[] {
+  const found: UpcomingTask[] = [];
+  for (const week of weeks) {
+    for (const day of week.days) {
+      for (const task of day.tasks) {
+        if (task.groupId === groupId && task.label.trim() !== '')
+          found.push({ weekStart: week.weekStart, day, task });
+      }
+    }
+  }
+  return found.sort((a, b) => a.day.date.localeCompare(b.day.date));
+}
+
 export function groupTotals(week: Week, groupId: string): { done: number; total: number } {
   const tasks = groupTasks(week, groupId);
   return { done: tasks.filter((t) => t.task.done).length, total: tasks.length };
