@@ -568,7 +568,7 @@ export default function App() {
 
         {/* Chrome -> work is now the largest interval on the page (96px), and the
             strip groups with the work it orients rather than with the header. */}
-        <div className="flex flex-col gap-12">
+        <div className="frost-week-block flex flex-col gap-12">
           <div data-tour="week">
             <WeekStrip
               days={week.days}
@@ -631,18 +631,20 @@ export default function App() {
                 falls: the three lines say what this week is for, the groups say
                 where its work went, and the goals say what none of it resets
                 on Monday. */}
-            <div className="flex flex-col gap-12 md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
+            <div className="frost-side-column flex flex-col gap-12 md:col-start-2 md:row-start-2 xl:col-start-3 xl:row-start-1">
               <div data-tour="intent">
                 <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
               </div>
 
               {/* Groups and goals are lit together by the tour, and they are
-                  one thought anyway: where this week's work went, and what
-                  none of it resets on. The wrapper repeats the column's own
-                  48px gap, so the layout is unchanged. */}
-              <div data-tour="groups" className="flex flex-col gap-12">
+                  one thought anyway: where this week's work went, and what none
+                  of it resets on. It repeats the column's own 48px gap, and
+                  carries the column's class so the 4K step-down reaches inside
+                  it too, so the layout is unchanged either way. */}
+              <div data-tour="groups" className="frost-side-column flex flex-col gap-12">
                 <GroupPanel
                   week={week}
+                  upcomingWeeks={upcomingWeeks}
                   groups={prefs.groups}
                   selected={selected}
                   onSelectDay={setSelected}
@@ -700,6 +702,9 @@ export default function App() {
           twin in the header hides at the same breakpoint this one appears, so
           only ever one is on screen. */}
       <SettingsButton variant="floating" onClick={openTheme} />
+      </div>
+
+      {blurred && <PrivacyCurtain onLift={toggleBlur} />}
 
       {/* Last, and only once there is a week to point at: every card but the
           first names something on the page, and the page is not there until
