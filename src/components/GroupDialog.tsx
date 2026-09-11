@@ -93,6 +93,8 @@ export function GroupDialog({ open, group, onClose, onSave, onDelete, taskCount 
       <div
         ref={panelRef}
         tabIndex={-1}
+        // Named for the tour, which opens this dialog and lights it.
+        data-tour="group-dialog"
         className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7 focus:outline-none"
         style={{
           background:

@@ -3,13 +3,8 @@ import { createPortal } from 'react-dom';
 import { useDialog } from '../hooks/useDialog';
 
 /**
- * What the app can do, in one place.
- *
- * Everything here is discoverable by poking around — the gear opens the
- * theme, the avatar opens the account — but "discoverable" and "discovered"
- * are different things, and a sparse interface hides its own depth. This is
- * the one screen allowed to explain, which is what keeps every other screen
- * free to say nothing.
+ * What the app can do, in one place. The one screen allowed to explain, which
+ * is what keeps every other screen free to say nothing.
  *
  * KEEP THIS LIST CURRENT. A feature that ships without a line here is a
  * feature most people will never find.
@@ -20,60 +15,66 @@ const SECTIONS: { title: string; items: string[] }[] = [
     items: [
       'Pick a day from the strip along the top.',
       'Move between weeks with the arrows, or open the date to jump to any week.',
-      '"today" appears when you’ve wandered off the current week.',
+      'A "today" button appears when you are looking at a different week.',
     ],
   },
   {
     title: 'Tasks',
     items: [
-      'Add a task with "+ add task". Enter saves it, Escape throws it away.',
-      'An empty day offers what you did on it last week, in grey. Click one to bring it forward.',
-      'Click a row to tick it off. Hover a row to edit or delete it.',
-      'Clearing a task’s text deletes the row.',
+      'Add a task with "+ add task". Enter saves it, Escape cancels it.',
+      'An empty day shows what you did on that weekday last week, in grey. Click one to add it.',
+      'Click a row to tick it off. Hover a row for its controls.',
+      'The arrow on a hovered row moves that task to another day. It keeps its group and its tick.',
+      'Deleting a task\u2019s text deletes the row.',
     ],
   },
   {
     title: 'Groups',
     items: [
-      'Make a group in the groups panel — a name and a mark from the icon library.',
-      'File a task with the tag button on its row, or while you type it.',
-      'The group’s mark shows next to the task, and its bar tracks the week.',
-      'Open a group to see everything in it, and click a task to jump to its day.',
+      'Make a group in the groups panel. It needs a name and an icon.',
+      'Put a task in a group with the tag button on its row, or while you are typing it.',
+      'The group\u2019s icon shows next to the task, and its bar shows how much of that group is done.',
+      'Open a group to see everything in it. Click a task there to jump to its day.',
     ],
   },
   {
     title: 'Standing tasks',
     items: [
-      'Open your picture (or "sign in") and set the tasks you do regularly.',
-      'They’re added to every new week automatically.',
-      'Switch off the days a task doesn’t apply to, and give it a group to carry.',
-      '"add these to this week" drops them into the week you’re already in.',
+      'Open your profile picture, or "sign in", and list the tasks you do regularly.',
+      'They are added to every new week automatically.',
+      'Choose which days each one appears on, and give it a group to carry.',
+      '"add these to this week" adds them to the week you are already in.',
+    ],
+  },
+  {
+    title: 'Goals',
+    items: [
+      'Write what you are working toward, under the groups panel.',
+      'Goals do not reset on Monday. They stay until you tick them off.',
     ],
   },
   {
     title: 'This week',
     items: [
       'Set a focus, a reward and an affirmation in the side panel.',
-      'The ring shows how much of the week is done; the curve shows your pace.',
+      'The ring shows how much of the week is done. The curve shows your pace.',
       '"clear checks" unticks everything and keeps the text.',
     ],
   },
   {
     title: 'Timer',
     items: [
-      'The clock in the header doubles as a stopwatch and a countdown.',
+      'The clock in the header is also a stopwatch and a countdown.',
       'Switch between counting up and down, and add or remove minutes before you start.',
       'Expand it to fill the screen.',
-      'It stays on this device.',
     ],
   },
   {
     title: 'Making it yours',
     items: [
-      'Open settings — the gear beside the clock, or bottom right on a phone.',
-      'The whole app is built from two colours.',
-      'Rename it — the name becomes the wordmark in the corner.',
-      'Themes stay on this device.',
+      'Open settings with the gear beside the clock, or the one in the bottom right on a phone.',
+      'Pick one of the five themes, or set your own two colours.',
+      'Rename the app, and the name replaces the wordmark in the corner.',
     ],
   },
   {
@@ -103,7 +104,13 @@ function InfoIcon() {
   );
 }
 
-export function InfoDialog() {
+type Props = {
+  /** Reopens the guided tour. The dialog closes first: two overlays at once
+      would leave the tour lighting things behind a panel covering them. */
+  onReplayTour: () => void;
+};
+
+export function InfoDialog({ onReplayTour }: Props) {
   const [open, setOpen] = useState(false);
 
   // Stable identity: the hook restores focus in its cleanup, so a new closure
@@ -147,6 +154,8 @@ export function InfoDialog() {
             <div
               ref={panelRef}
               tabIndex={-1}
+              // Named for the tour, which lights whichever dialog is open.
+              data-tour="info-dialog"
               className="frost-rise my-auto w-full max-w-lg rounded-2xl p-7 focus:outline-none"
               style={{
                 background:
@@ -178,10 +187,28 @@ export function InfoDialog() {
                 ))}
               </div>
 
+              {/* The way back to the tour, and the only one. Exiting at step
+                  one is a reasonable thing to do and must not be the last
+                  word on it. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onReplayTour();
+                }}
+                className="mt-8 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150 hover:text-frost-cyan-200"
+                style={{
+                  border: '1px solid rgb(var(--frost-accent-rgb) / 0.22)',
+                  color: 'var(--color-frost-cyan-300)',
+                }}
+              >
+                take the tour
+              </button>
+
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="mt-8 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150"
+                className="mt-2.5 w-full rounded-lg px-5 py-2.5 text-sm transition-colors duration-150"
                 style={{
                   backgroundColor: 'var(--color-frost-cyan-200)',
                   color: 'var(--frost-on-accent)',

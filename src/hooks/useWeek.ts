@@ -431,6 +431,42 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     [mapDay],
   );
 
+  /**
+   * Sends one task to another day of the same week.
+   *
+   * The row is moved, not copied and retyped: it keeps its id, its text, its
+   * group and its checkmark, so a half-finished thing that turns out to belong
+   * on Thursday arrives on Thursday still half finished. Deleting it and
+   * writing it again was the only way to say this before, and that lost all
+   * three.
+   *
+   * Both days are rewritten inside one `mutate`, which is what makes the move
+   * a single save rather than a delete that lands and an add that might not.
+   * A missing task, or a move onto the day it is already on, returns the week
+   * unchanged so nothing is written at all.
+   */
+  const moveTask = useCallback(
+    (fromDayId: DayId, taskId: string, toDayId: DayId) =>
+      mutate((w) => {
+        if (fromDayId === toDayId) return w;
+        const task = w.days
+          .find((d) => d.id === fromDayId)
+          ?.tasks.find((t) => t.id === taskId);
+        if (!task || task.label.trim() === '') return w;
+        return {
+          ...w,
+          days: w.days.map((d) => {
+            if (d.id === fromDayId) return { ...d, tasks: d.tasks.filter((t) => t.id !== taskId) };
+            // Appended rather than inserted: the end of a day's list is where
+            // everything else you add to it goes.
+            if (d.id === toDayId) return { ...d, tasks: [...d.tasks, task] };
+            return d;
+          }),
+        };
+      }),
+    [mutate],
+  );
+
   const setMeta = useCallback(
     (patch: Partial<Pick<Week, 'focus' | 'reward' | 'affirmation'>>) =>
       mutate((w) => ({ ...w, ...patch })),
@@ -559,6 +595,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     addTask,
     addTasks,
     removeTask,
+    moveTask,
     setTaskGroup,
     setMeta,
     clearChecks,

@@ -42,6 +42,8 @@ import { InfoDialog } from './components/InfoDialog';
 import { PrivacyCurtain } from './components/PrivacyCurtain';
 import { SettingsButton } from './components/SettingsButton';
 import { ThemeDialog } from './components/ThemeDialog';
+import { Tour, type TourStage } from './components/Tour';
+import { markTourSeenOnDevice, tourSeenOnDevice } from './lib/tour';
 
 export default function App() {
   useClickRipple();
@@ -57,6 +59,12 @@ export default function App() {
   const { mode, profile, refresh: refreshAccount } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  /* One decision per visit. Without it, finishing the tour writes `tourDone`,
+     which re-renders with a fresh answer to "should this be shown", and the
+     effect below would be free to reach the opposite conclusion on the way
+     back down. */
+  const [tourAsked, setTourAsked] = useState(false);
   const [migratedUid, setMigratedUid] = useState<string | null>(null);
 
   /**
@@ -108,6 +116,7 @@ export default function App() {
     addTask,
     addTasks,
     removeTask,
+    moveTask,
     setTaskGroup,
     setMeta,
     clearChecks,
@@ -171,6 +180,47 @@ export default function App() {
     (group: TaskGroup) => setGroupEdit({ mode: 'edit', group }),
     [],
   );
+
+  /**
+   * The tour is offered exactly once, to somebody who has not had it.
+   *
+   * Both records are consulted and either one settles it: the account knows
+   * across devices, the device knows before there is an account. Asked only
+   * once `ready` is true, because until prefs have loaded `tourDone` is
+   * `false` by default rather than by fact, and starting on that would run the
+   * tour over the top of every returning user's week.
+   */
+  useEffect(() => {
+    if (!ready || tourAsked) return;
+    setTourAsked(true);
+    if (!prefs.tourDone && !tourSeenOnDevice()) setTourOpen(true);
+  }, [ready, tourAsked, prefs.tourDone]);
+
+  /* Exit and finish are the same event. Somebody who leaves at step one has
+     decided about the tour just as much as somebody who read it through, and
+     asking them again next Tuesday would be ignoring the answer they gave. */
+  const closeTour = useCallback(() => {
+    setTourOpen(false);
+    markTourSeenOnDevice();
+    void updatePrefs({ tourDone: true });
+  }, [updatePrefs]);
+
+  const replayTour = useCallback(() => setTourOpen(true), []);
+
+  /**
+   * The two screens the tour walks into, opened and closed by whichever step
+   * is showing.
+   *
+   * Exclusive by construction: every dialog is set on every call, so moving
+   * off a staged step closes what that step opened without the step having to
+   * know what came before it. `null` is the end of the tour, and closes all of
+   * them. Nothing else can be open at the time, since the tour is what the
+   * user has been clicking.
+   */
+  const stageTour = useCallback((stage: TourStage | null) => {
+    setGroupEdit(stage === 'group' ? { mode: 'new', assignTo: null } : null);
+    setThemeOpen(stage === 'theme');
+  }, []);
 
   /* The cap is enforced here rather than by letting the save fall on the floor:
      `normalise` slices the stored list, so a thirteenth group would be built,
@@ -434,6 +484,13 @@ export default function App() {
       ? (taskId: string) =>
           setGroupEdit({ mode: 'new', assignTo: { dayId: selectedDay.id, taskId } })
       : undefined,
+    days: week.days,
+    /* The board does not follow the task. Sending Thursday's homework to
+       Thursday is done in the middle of planning Monday, and jumping the
+       selection there would end that sentence for you — the strip's bar
+       moving is the confirmation, and it is on screen either way. */
+    onMoveTask: (taskId: string, toDayId: DayId) =>
+      moveTask(selectedDay.id, taskId, toDayId),
     suggestions,
     onUseSuggestion: (s: Suggestion) => void addTask(selectedDay.id, s.label, s.groupId),
     onUseAllSuggestions: (items: Suggestion[]) => addTasks(selectedDay.id, items),
@@ -483,17 +540,21 @@ export default function App() {
           55% of its width on empty black. The strip below is what earns the extra
           width — no text measure grows. */}
       <div className="frost-shell relative z-10 flex frost-min-screen flex-col gap-16 sm:gap-24">
-        <Header
-          weekStart={weekStart}
-          knownWeeks={knownWeeks}
-          onGoToWeek={goToWeek}
-          sync={sync}
-          profile={profile}
-          avatar={prefs.avatar}
-          onOpenAccount={() => setAccountOpen(true)}
-          onOpenTheme={openTheme}
-          wordmark={theme.name}
-        />
+        {/* Wrapped only to give the tour something to light: the header is a
+            row of unrelated controls with no single element of its own. */}
+        <div data-tour="chrome">
+          <Header
+            weekStart={weekStart}
+            knownWeeks={knownWeeks}
+            onGoToWeek={goToWeek}
+            sync={sync}
+            profile={profile}
+            avatar={prefs.avatar}
+            onOpenAccount={() => setAccountOpen(true)}
+            onOpenTheme={openTheme}
+            wordmark={theme.name}
+          />
+        </div>
 
         {error && (
           <p
@@ -507,13 +568,15 @@ export default function App() {
 
         {/* Chrome -> work is now the largest interval on the page (96px), and the
             strip groups with the work it orients rather than with the header. */}
-        <div className="frost-week-block flex flex-col gap-12">
-          <WeekStrip
-            days={week.days}
-            selected={selected}
-            today={today}
-            onSelect={setSelected}
-          />
+        <div className="flex flex-col gap-12">
+          <div data-tour="week">
+            <WeekStrip
+              days={week.days}
+              selected={selected}
+              today={today}
+              onSelect={setSelected}
+            />
+          </div>
 
           <main className="grid gap-12 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_300px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
             {/* THE DAY CARD IS FIRST, and that is a phone decision.
@@ -568,20 +631,28 @@ export default function App() {
                 falls: the three lines say what this week is for, the groups say
                 where its work went, and the goals say what none of it resets
                 on Monday. */}
-            <div className="frost-side-column flex flex-col gap-12 md:col-start-2 md:row-start-2 xl:col-start-3 xl:row-start-1">
-              <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
-              <GroupPanel
-                week={week}
-                upcomingWeeks={upcomingWeeks}
-                groups={prefs.groups}
-                selected={selected}
-                onSelectDay={setSelected}
-                onNewGroup={
-                  canAddGroup ? () => setGroupEdit({ mode: 'new', assignTo: null }) : undefined
-                }
-                onEditGroup={openEditGroup}
-              />
-              <GoalPanel goals={prefs.goals} onSave={saveGoals} />
+            <div className="flex flex-col gap-12 md:col-start-2 md:row-start-3 xl:col-start-3 xl:row-start-1">
+              <div data-tour="intent">
+                <IntentPanel week={week} onSave={setMeta} onClearChecks={clearChecks} />
+              </div>
+
+              {/* Groups and goals are lit together by the tour, and they are
+                  one thought anyway: where this week's work went, and what
+                  none of it resets on. The wrapper repeats the column's own
+                  48px gap, so the layout is unchanged. */}
+              <div data-tour="groups" className="flex flex-col gap-12">
+                <GroupPanel
+                  week={week}
+                  groups={prefs.groups}
+                  selected={selected}
+                  onSelectDay={setSelected}
+                  onNewGroup={
+                    canAddGroup ? () => setGroupEdit({ mode: 'new', assignTo: null }) : undefined
+                  }
+                  onEditGroup={openEditGroup}
+                />
+                <GoalPanel goals={prefs.goals} onSave={saveGoals} />
+              </div>
             </div>
           </main>
         </div>
@@ -618,8 +689,10 @@ export default function App() {
       />
 
       {/* Owns its own open state — nothing else in the app needs to know, and
-          the button is part of the feature rather than a separate control. */}
-      <InfoDialog />
+          the button is part of the feature rather than a separate control.
+          The tour is the exception it carries: the info dialog is where
+          somebody goes looking after leaving one by accident. */}
+      <InfoDialog onReplayTour={replayTour} />
 
       {/* The phone half of the settings control. Below `sm` the header stacks
           and centres, which is no place for a control reached for
@@ -627,9 +700,11 @@ export default function App() {
           twin in the header hides at the same breakpoint this one appears, so
           only ever one is on screen. */}
       <SettingsButton variant="floating" onClick={openTheme} />
-      </div>
 
-      {blurred && <PrivacyCurtain onLift={toggleBlur} />}
+      {/* Last, and only once there is a week to point at: every card but the
+          first names something on the page, and the page is not there until
+          the week has loaded. */}
+      {tourOpen && <Tour onClose={closeTour} onStage={stageTour} />}
     </>
   );
 }
