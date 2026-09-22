@@ -584,8 +584,9 @@ export function Tour({ onClose, onStage }: Props) {
           ...DOCK_STYLE[dock],
           width,
           maxHeight,
-          background:
-            'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',
+          backgroundColor: 'var(--color-frost-surface)',
+          backgroundImage:
+            'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), rgb(var(--frost-accent-rgb) / 0) 62%)',
           border: '1px solid rgb(var(--frost-accent-rgb) / 0.16)',
           boxShadow: '0 20px 50px -20px rgb(var(--frost-base-rgb) / 0.95)',
         }}
