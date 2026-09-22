@@ -22,8 +22,9 @@ type Step = {
   stage?: TourStage;
   title: string;
   body: string;
-  /** Set on the welcome card. Rendered as a quotation, not as more body. */
-  quote?: { text: string; by: string };
+  /** The opening card, which is the one card with nothing to point at and
+      the whole screen to say it in. */
+  hero?: true;
   /** A still of a screen the tour cannot honestly open on a new account. */
   preset?: 'standing';
 };
@@ -42,10 +43,7 @@ const STEPS: Step[] = [
     target: null,
     title: 'Welcome to the Frost Weekly Planner',
     body: 'A highly functional, smooth digital tool awaits at your fingertips, should you learn the different features of this Planner. This tutorial doesn’t take long and you can leave at any point.',
-    quote: {
-      text: 'Establishing order amidst the Chaos of life is one of the big things that creates a mind of Fortitude',
-      by: 'Josua Stander',
-    },
+    hero: true,
   },
   {
     target: 'week',
@@ -150,6 +148,9 @@ const RADIUS = 18;
     shortest band worth docking into, and the clearance it keeps from whatever
     it sits beside. */
 const CARD = 416;
+/* The opening card only. It points at nothing, so the whole screen is its to
+   use, and it is the one card read before anybody has decided to stay. */
+const HERO = 560;
 const MIN_CARD = 300;
 const MIN_BAND = 200;
 const GAP = 24;
@@ -169,8 +170,13 @@ const GAP = 24;
  */
 type Dock = 'centre' | 'top' | 'bottom' | 'left' | 'right' | 'corner';
 
-function placeFor(hole: Rect | null, vw: number, vh: number): { dock: Dock; width: number } {
-  const full = Math.min(CARD, vw - GAP * 2);
+function placeFor(
+  hole: Rect | null,
+  vw: number,
+  vh: number,
+  cap = CARD,
+): { dock: Dock; width: number } {
+  const full = Math.min(cap, vw - GAP * 2);
   if (!hole) return { dock: 'centre', width: full };
 
   /* Whichever side has more room gets first refusal, and the card narrows to
@@ -529,7 +535,12 @@ export function Tour({ onClose, onStage }: Props) {
      still lands somewhere different every step. */
   const zoom = pageZoom();
   const viewportH = window.innerHeight / zoom;
-  const { dock, width } = placeFor(rect, window.innerWidth / zoom, viewportH);
+  const { dock, width } = placeFor(
+    rect,
+    window.innerWidth / zoom,
+    viewportH,
+    step.hero ? HERO : CARD,
+  );
   const maxHeight = maxCardHeight(dock, rect, viewportH);
 
   return createPortal(
@@ -566,7 +577,9 @@ export function Tour({ onClose, onStage }: Props) {
         tabIndex={-1}
         role="dialog"
         aria-label="Tour"
-        className="frost-rise pointer-events-auto fixed flex flex-col rounded-2xl p-6 focus:outline-none"
+        className={`frost-rise pointer-events-auto fixed flex flex-col rounded-2xl focus:outline-none ${
+          step.hero ? 'p-9 sm:p-10' : 'p-6'
+        }`}
         style={{
           ...DOCK_STYLE[dock],
           width,
@@ -585,24 +598,20 @@ export function Tour({ onClose, onStage }: Props) {
             <span className="text-frost-cyan-300">{index + 1}</span> / {steps.length}
           </p>
 
-          <h2 className="mt-2 font-display text-lg leading-snug tracking-tight text-frost-text">
+          <h2
+            className={`font-display leading-snug tracking-tight text-frost-text ${
+              step.hero ? 'mt-3 text-2xl' : 'mt-2 text-lg'
+            }`}
+          >
             {step.title}
           </h2>
-          <p className="mt-2.5 text-sm leading-relaxed text-frost-text-dim">{step.body}</p>
-
-          {step.quote && (
-            <figure
-              className="mt-4 pl-4"
-              style={{ borderLeft: '2px solid rgb(var(--frost-accent-rgb) / 0.35)' }}
-            >
-              <blockquote className="text-sm leading-relaxed text-frost-text italic">
-                “{step.quote.text}”
-              </blockquote>
-              <figcaption className="mt-1.5 font-mono text-xs text-frost-text-faint">
-                - {step.quote.by}
-              </figcaption>
-            </figure>
-          )}
+          <p
+            className={`leading-relaxed text-frost-text-dim ${
+              step.hero ? 'mt-4 text-base' : 'mt-2.5 text-sm'
+            }`}
+          >
+            {step.body}
+          </p>
 
           {step.preset === 'standing' && <StandingPreset />}
         </div>
