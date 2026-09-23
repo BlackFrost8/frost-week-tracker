@@ -97,8 +97,9 @@ export function GroupDialog({ open, group, onClose, onSave, onDelete, taskCount 
         data-tour="group-dialog"
         className="frost-rise my-auto w-full max-w-sm rounded-2xl p-7 focus:outline-none"
         style={{
-          background:
-            'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), var(--color-frost-surface) 62%)',
+          backgroundColor: 'var(--color-frost-surface)',
+          backgroundImage:
+            'radial-gradient(130% 110% at 0% 0%, rgb(var(--frost-accent-rgb) / 0.075), rgb(var(--frost-accent-rgb) / 0) 62%)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
