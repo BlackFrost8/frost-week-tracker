@@ -22,10 +22,17 @@ const SECTIONS: { title: string; items: string[] }[] = [
     title: 'Tasks',
     items: [
       'Add a task with "+ add task". Enter saves it, Escape cancels it.',
-      'An empty day shows what you did on that weekday last week, in grey. Click one to add it.',
       'Click a row to tick it off. Hover a row for its controls.',
       'The arrow on a hovered row moves that task to another day. It keeps its group and its tick.',
       'Deleting a task\u2019s text deletes the row.',
+    ],
+  },
+  {
+    title: 'Calendar',
+    items: [
+      'Under each day’s tasks, "+ add a note" keeps something to remember. Notes have no tick and don’t count.',
+      'Connect Google Calendar in settings to show your events on the days they fall on.',
+      'A dot in the week strip marks a day with notes or events.',
     ],
   },
   {
@@ -41,9 +48,8 @@ const SECTIONS: { title: string; items: string[] }[] = [
     title: 'Standing tasks',
     items: [
       'Open your profile picture, or "sign in", and list the tasks you do regularly.',
-      'They are added to every new week automatically.',
+      'They are added to every new week, and a new one joins the rest of this week when you close the dialog.',
       'Choose which days each one appears on, and give it a group to carry.',
-      '"add these to this week" adds them to the week you are already in.',
     ],
   },
   {
@@ -84,6 +90,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
       'Everything saves automatically.',
       'Anything you made before signing in is brought into your account.',
       'Set a profile picture from your device, or use your Google one.',
+      'What is stored, and how to remove it, is in the privacy policy linked at the bottom of the page.',
     ],
   },
 ];
