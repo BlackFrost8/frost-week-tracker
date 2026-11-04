@@ -6,6 +6,8 @@ type Props = {
   selected: DayId;
   today: string;
   onSelect: (id: DayId) => void;
+  /** Dates with notes or calendar events, marked with a dot. */
+  marked: Set<string>;
 };
 
 /**
@@ -22,7 +24,7 @@ type Props = {
  * They are flat fills: chroma, not light, so they spend nothing from the glow
  * budget.
  */
-export function WeekStrip({ days, selected, today, onSelect }: Props) {
+export function WeekStrip({ days, selected, today, onSelect, marked }: Props) {
   return (
     <nav
       // 4px gaps on phones is not fussiness: at 375 with the shell's 16px
@@ -38,6 +40,7 @@ export function WeekStrip({ days, selected, today, onSelect }: Props) {
         const isSelected = day.id === selected;
         const isToday = day.date === today;
         const complete = total > 0 && done === total;
+        const hasCalendar = marked.has(day.date);
 
         return (
           <button
@@ -46,7 +49,7 @@ export function WeekStrip({ days, selected, today, onSelect }: Props) {
             onClick={() => onSelect(day.id)}
             aria-pressed={isSelected}
             aria-current={isToday ? 'date' : undefined}
-            aria-label={`${day.label}, ${done} of ${total} done`}
+            aria-label={`${day.label}, ${done} of ${total} done${hasCalendar ? ', has calendar items' : ''}`}
             className="group flex flex-col gap-2 pt-2 pb-2.5 text-left transition-colors duration-150"
           >
             <span className="flex items-baseline justify-between gap-1">
@@ -63,6 +66,13 @@ export function WeekStrip({ days, selected, today, onSelect }: Props) {
                 {/* DAY_SHORT is already sentence case — the wordmark stays the
                     only uppercase element in the app. */}
                 {DAY_SHORT[day.id]}
+                {hasCalendar && (
+                  <span
+                    className="ml-1 inline-block h-1 w-1 rounded-full align-middle"
+                    style={{ backgroundColor: 'var(--color-frost-cyan-300)' }}
+                    aria-hidden="true"
+                  />
+                )}
               </span>
               <span className="hidden font-mono text-xs text-frost-text-faint sm:inline">
                 {cellDate(day.date)}

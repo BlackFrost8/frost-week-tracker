@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import type { Day, DayId } from '../types';
-import { groupById, type TaskGroup } from '../lib/prefs';
+import type { TaskGroup } from '../lib/prefs';
+import type { CalendarEvent } from '../lib/gcal';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
-import { TaskIcon } from './TaskIcon';
+import { DayCalendar } from './DayCalendar';
 import { TaskRow } from './TaskRow';
-
-/** A line offered from last week, and the group it was filed under then. */
-export type Suggestion = { label: string; groupId: string | null };
 
 type Props = {
   day: Day;
@@ -22,18 +20,11 @@ type Props = {
   /** Every day of the week, so a task can be sent to one of the other six. */
   days: Day[];
   onMoveTask: (taskId: string, toDayId: DayId) => void;
-  /**
-   * What this weekday held last week, minus anything already on it this week.
-   *
-   * This replaced a fixed pool of thirty generic prompts that were marked as
-   * seen the moment they rendered. That pool could not win: it ran out, it
-   * burned entries during week-navigation that were never on screen long
-   * enough to read, and "Finish your homework" was never going to be as
-   * useful as the thing you actually wrote last Monday.
-   */
-  suggestions: Suggestion[];
-  onUseSuggestion: (suggestion: Suggestion) => void;
-  onUseAllSuggestions: (suggestions: Suggestion[]) => void;
+  /** Google Calendar events on this date. */
+  events: CalendarEvent[];
+  onAddNote: () => string;
+  onNoteChange: (noteId: string, text: string) => void;
+  onDeleteNote: (noteId: string) => void;
 };
 
 /**
@@ -57,9 +48,10 @@ export function DayCard({
   onRequestNewGroup,
   days,
   onMoveTask,
-  suggestions,
-  onUseSuggestion,
-  onUseAllSuggestions,
+  events,
+  onAddNote,
+  onNoteChange,
+  onDeleteNote,
 }: Props) {
   const done = completedCount(day);
   const left = leftCount(day);
@@ -137,60 +129,6 @@ export function DayCard({
             <span className="grid h-4 w-4 place-items-center font-mono">+</span>
             add task
           </button>
-
-          {/* Greyed, so they read as offers rather than as tasks already on the
-              list. They are your own words from this weekday last week, which
-              is why clicking one inserts the text instead of a blank row —
-              there is nothing to clear when the wording is already yours.
-
-              Deliberately NOT inside the empty state. Tied to it, taking one
-              suggestion made the day non-empty and the remaining offers
-              vanished mid-thought, so a Monday that repeats three things from
-              last Monday could only ever give you the first. The list is
-              filtered against what the day already holds, so it shrinks as you
-              use it and disappears once there is nothing left to offer. */}
-          {suggestions.length > 0 && (
-            <div className="mt-6">
-              <p className="text-xs text-frost-text-faint">last {day.label}</p>
-
-              <div className="mt-2 flex flex-col items-start gap-0.5">
-                {suggestions.map((suggestion) => {
-                  const group = groupById(groups, suggestion.groupId);
-                  return (
-                    <button
-                      key={suggestion.label}
-                      type="button"
-                      onClick={() => onUseSuggestion(suggestion)}
-                      className="flex items-center gap-2 py-1 text-left text-sm text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
-                    >
-                      <span className="font-mono" aria-hidden="true">
-                        +
-                      </span>
-                      {suggestion.label}
-                      {/* Shown because taking the offer keeps the group too.
-                          An offer that arrived unmarked and landed marked
-                          would be doing something it never said it would. */}
-                      {group && (
-                        <span className="shrink-0 opacity-70" title={group.name}>
-                          <TaskIcon icon={group.icon} size={13} strokeWidth={2} />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {suggestions.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => onUseAllSuggestions(suggestions)}
-                  className="mt-1.5 py-1 text-sm text-frost-text-dim transition-colors duration-150 hover:text-frost-cyan-300"
-                >
-                  bring all {suggestions.length} forward
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         <footer className="frost-divider mt-5 pt-4">
@@ -200,6 +138,14 @@ export function DayCard({
             <span className="text-frost-text">{left}</span> left
           </p>
         </footer>
+
+        <DayCalendar
+          notes={day.notes}
+          events={events}
+          onAddNote={onAddNote}
+          onNoteChange={onNoteChange}
+          onDeleteNote={onDeleteNote}
+        />
       </div>
     </section>
   );
