@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DayId, SyncState, Task, Week } from '../types';
+import type { DayId, Note, SyncState, Task, Week } from '../types';
 import type { StandingTask } from '../lib/prefs';
 import { flushPending, type WeekStore } from '../lib/storage';
 import { addDays, createWeek, currentWeekStart, standingTasksFor, uid } from '../lib/week';
@@ -231,9 +231,9 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     };
   }, [weekStart, ready, store, reloadToken]);
 
-  /* Last week, loaded alongside this one purely to feed the empty-day
-     suggestions. Failure is silent and non-blocking: no previous week simply
-     means no suggestions, which is exactly right for a first-ever week. */
+  /* Last week, loaded alongside this one for the hero's "last week" score.
+     Failure is silent and non-blocking: no previous week simply means no
+     score, which is exactly right for a first-ever week. */
   useEffect(() => {
     if (!ready) {
       setPreviousWeek(null);
@@ -399,17 +399,35 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     [mapDay],
   );
 
-  /** Several at once, as one mutation and therefore one save. */
-  const addTasks = useCallback(
-    (dayId: DayId, incoming: { label: string; groupId: string | null }[]) =>
-      mapDay(dayId, (tasks) => [
-        ...tasks,
-        ...incoming
-          .map((t) => ({ ...t, label: t.label.trim() }))
-          .filter((t) => t.label !== '')
-          .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId })),
-      ]),
-    [mapDay],
+  const mapNotes = useCallback(
+    (dayId: DayId, fn: (notes: Note[]) => Note[]) =>
+      mutate((w) => ({
+        ...w,
+        days: w.days.map((d) => (d.id === dayId ? { ...d, notes: fn(d.notes) } : d)),
+      })),
+    [mutate],
+  );
+
+  /** Returns the new note's id so the caller can focus it. */
+  const addNote = useCallback(
+    (dayId: DayId) => {
+      const id = uid();
+      mapNotes(dayId, (notes) => [...notes, { id, text: '' }]);
+      return id;
+    },
+    [mapNotes],
+  );
+
+  const setNoteText = useCallback(
+    (dayId: DayId, noteId: string, text: string) =>
+      mapNotes(dayId, (notes) => notes.map((n) => (n.id === noteId ? { ...n, text } : n))),
+    [mapNotes],
+  );
+
+  const removeNote = useCallback(
+    (dayId: DayId, noteId: string) =>
+      mapNotes(dayId, (notes) => notes.filter((n) => n.id !== noteId)),
+    [mapNotes],
   );
 
   /**
@@ -475,35 +493,39 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
 
   /**
    * Adds the standing tasks to the days they are set for in the week currently
-   * open, skipping any a day already has. Purely additive and explicitly
-   * invoked — a new week seeds itself, but a week already in progress is never
-   * rewritten without being asked. Days a task excludes are left untouched
-   * rather than having it removed: this only ever adds.
+   * open, skipping any a day already has. Days a task excludes are left
+   * untouched rather than having it removed: this only ever adds.
+   *
+   * `fromDate` skips earlier days, so a routine added on Wednesday doesn't
+   * land on Monday as two days already missed.
    */
   const applyStandingTasks = useCallback(
-    (standing: StandingTask[]) =>
+    (standing: StandingTask[], fromDate?: string) =>
       mutate((w) => {
         // Built once, not once per task: it was being rebuilt inside the map
         // below, so a week of seventy rows rebuilt the same Map seventy times.
         const wanted = standingGroups(standing);
-        return {
-          ...w,
-          days: w.days.map((day) => {
-            /* Existing rows are filed before the missing ones are added. A
-               task the week already holds is exactly the case "add these" used
-               to skip entirely, so setting a group on a standing task did
-               nothing for the routine already on the board. Filing a row is
-               not adding one, so the "only ever adds" promise above is
-               intact. */
-            const existing = day.tasks.map((task) => fileFromStanding(task, wanted));
-            const have = new Set(existing.map((t) => t.label.trim().toLowerCase()));
-            const missing = standingTasksFor(standing, day.id)
-              .map((t) => ({ ...t, label: t.label.trim() }))
-              .filter((t) => t.label && !have.has(t.label.toLowerCase()))
-              .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
-            return { ...day, tasks: missing.length ? [...existing, ...missing] : existing };
-          }),
-        };
+        let changed = false;
+        const days = w.days.map((day) => {
+          if (fromDate && day.date < fromDate) return day;
+          /* Existing rows are filed before the missing ones are added. A
+             task the week already holds is exactly the case "add these" used
+             to skip entirely, so setting a group on a standing task did
+             nothing for the routine already on the board. Filing a row is
+             not adding one, so the "only ever adds" promise above is
+             intact. */
+          const existing = day.tasks.map((task) => fileFromStanding(task, wanted));
+          const have = new Set(existing.map((t) => t.label.trim().toLowerCase()));
+          const missing = standingTasksFor(standing, day.id)
+            .map((t) => ({ ...t, label: t.label.trim() }))
+            .filter((t) => t.label && !have.has(t.label.toLowerCase()))
+            .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
+          if (!missing.length && existing.every((t, i) => t === day.tasks[i])) return day;
+          changed = true;
+          return { ...day, tasks: [...existing, ...missing] };
+        });
+        // Unchanged in, unchanged out, so `mutate` skips the write.
+        return changed ? { ...w, days } : w;
       }),
     [mutate],
   );
@@ -593,7 +615,6 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     toggleTask,
     setTaskLabel,
     addTask,
-    addTasks,
     removeTask,
     moveTask,
     setTaskGroup,
@@ -601,6 +622,9 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     clearChecks,
     applyStandingTasks,
     applyStandingGroups,
+    addNote,
+    setNoteText,
+    removeNote,
     flush,
   };
 }

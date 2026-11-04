@@ -17,12 +17,19 @@ export type Task = {
   groupId: string | null;
 };
 
+/** Something to remember on a day. Not a task: it has no checkbox and no count. */
+export type Note = {
+  id: string;
+  text: string;
+};
+
 export type Day = {
   id: DayId;
   label: string;
   /** ISO date (YYYY-MM-DD) of this specific day. Display formatting is derived. */
   date: string;
   tasks: Task[];
+  notes: Note[];
 };
 
 export type DayId = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';

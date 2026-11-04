@@ -1,4 +1,4 @@
-import type { Day, DayId, Task, Week } from '../types';
+import type { Day, DayId, Note, Task, Week } from '../types';
 import type { StandingTask } from './prefs';
 
 export const DAY_IDS: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -144,6 +144,7 @@ export function createWeek(weekStart: string, starter: StandingTask[] = []): Wee
       label: DAY_LABELS[id],
       date: addDays(weekStart, i),
       tasks: makeTasks(standingTasksFor(starter, id)),
+      notes: [],
     })),
   };
 }
@@ -300,11 +301,23 @@ export function normalizeWeek(raw: unknown, weekStart: string): Week {
           .filter((t) => t.label.trim() !== '')
       : [];
 
+    // Weeks saved before notes existed have no such field.
+    const notes: Note[] = Array.isArray(incoming?.notes)
+      ? incoming.notes
+          .filter((n): n is Note => typeof n === 'object' && n !== null)
+          .map((n) => ({
+            id: typeof n.id === 'string' ? n.id : uid(),
+            text: typeof n.text === 'string' ? n.text : '',
+          }))
+          .filter((n) => n.text.trim() !== '')
+      : [];
+
     return {
       id,
       label: DAY_LABELS[id],
       date: addDays(weekStart, i),
       tasks,
+      notes,
     } satisfies Day;
   });
 

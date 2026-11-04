@@ -1,11 +1,109 @@
 import { useEffect, useState } from 'react';
 import { MAX_THEME_NAME, PRESETS } from '../lib/theme';
+import { isCloudConfigured } from '../lib/firebase';
 import { useDialog } from '../hooks/useDialog';
 import type { useTheme } from '../hooks/useTheme';
+import type { Calendar } from '../hooks/useCalendar';
+import { GoogleMark } from './GoogleMark';
 
 /** The hook lives in App, not here: the wordmark in the header renders the
     theme's name, so both need the same instance of that state. */
-type Props = { open: boolean; onClose: () => void; theme: ReturnType<typeof useTheme> };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  theme: ReturnType<typeof useTheme>;
+  calendar: Calendar;
+  signedIn: boolean;
+  /** Opens the account dialog, for connecting while signed out. */
+  onSignIn: () => void;
+};
+
+/** "3 min ago", "yesterday" — when the events were last brought in. */
+function sinceText(iso: string): string {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return 'just now';
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  if (minutes < 60) return rtf.format(-minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  return rtf.format(-Math.round(hours / 24), 'day');
+}
+
+function CalendarSettings({
+  calendar,
+  signedIn,
+  onSignIn,
+}: {
+  calendar: Calendar;
+  signedIn: boolean;
+  onSignIn: () => void;
+}) {
+  const { connected, events, importedAt, status, error, connect, refresh, disconnect } = calendar;
+  const importing = status === 'importing';
+
+  return (
+    <div className="frost-divider mt-7 flex flex-col gap-3 pt-6">
+      <span className="text-xs text-frost-cyan-500">google calendar</span>
+
+      {!signedIn && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-sm text-frost-text-dim">Sign in to connect.</span>
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="text-sm text-frost-cyan-300 transition-colors hover:text-frost-cyan-100"
+          >
+            sign in
+          </button>
+        </div>
+      )}
+
+      {signedIn && !connected && (
+        <button
+          type="button"
+          onClick={connect}
+          disabled={importing}
+          className="flex items-center gap-3 self-start rounded-lg px-4 py-2 text-sm text-frost-text transition-colors duration-150 hover:text-frost-cyan-200 disabled:opacity-50"
+          style={{ backgroundColor: 'rgb(var(--frost-accent-rgb) / 0.12)' }}
+        >
+          <GoogleMark size={14} />
+          {importing ? 'importing…' : 'connect google calendar'}
+        </button>
+      )}
+
+      {signedIn && connected && (
+        <>
+          <p className="text-sm text-frost-text-dim">
+            <span className="text-frost-cyan-200">{events.length}</span>{' '}
+            {events.length === 1 ? 'event' : 'events'} imported
+            {importedAt && (
+              <span className="text-frost-text-faint"> · {sinceText(importedAt)}</span>
+            )}
+          </p>
+          <div className="flex items-center gap-5">
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={importing}
+              className="text-sm text-frost-cyan-300 transition-colors hover:text-frost-cyan-100 disabled:opacity-50"
+            >
+              {importing ? 'importing…' : 'refresh'}
+            </button>
+            <button
+              type="button"
+              onClick={disconnect}
+              className="text-sm text-frost-text-faint transition-colors hover:text-frost-alert"
+            >
+              disconnect
+            </button>
+          </div>
+        </>
+      )}
+
+      {error && <p className="text-sm text-frost-alert">{error}</p>}
+    </div>
+  );
+}
 
 /** Primary as the field, accent as the mark on it — the same relationship the
     theme itself has, so the swatch previews the idea and not just two colours. */
@@ -89,7 +187,7 @@ function ColourField({
   );
 }
 
-export function ThemeDialog({ open, onClose, theme }: Props) {
+export function ThemeDialog({ open, onClose, theme, calendar, signedIn, onSignIn }: Props) {
   const { presetId, name, spec, selectPreset, setCustom, setName, reset } = theme;
 
   // Escape, focus containment and focus restoration all live in the hook.
@@ -181,6 +279,10 @@ export function ThemeDialog({ open, onClose, theme }: Props) {
             />
           </label>
         </div>
+
+        {isCloudConfigured && (
+          <CalendarSettings calendar={calendar} signedIn={signedIn} onSignIn={onSignIn} />
+        )}
 
         <button
           type="button"

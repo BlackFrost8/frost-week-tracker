@@ -3,7 +3,6 @@ import type { DayId } from './types';
 import type { IconId } from './lib/icons';
 import {
   MAX_GROUPS,
-  groupById,
   makeGroup,
   type LongTermGoal,
   type StandingTask,
@@ -16,6 +15,8 @@ import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useWeek, type StandingGroupChange } from './hooks/useWeek';
 import { useUpcomingWeeks } from './hooks/useUpcomingWeeks';
+import { useCalendar } from './hooks/useCalendar';
+import { clearLocalCalendar, forgetToken } from './lib/gcal';
 import {
   cloudStore,
   clearAccountCache,
@@ -33,7 +34,7 @@ import { IntentPanel } from './components/IntentPanel';
 import { HeroPanel } from './components/HeroPanel';
 import { PaceCurve } from './components/PaceCurve';
 import { WeekStrip } from './components/WeekStrip';
-import { DayCard, type Suggestion } from './components/DayCard';
+import { DayCard } from './components/DayCard';
 import { GoalPanel } from './components/GoalPanel';
 import { GroupPanel } from './components/GroupPanel';
 import { AccountDialog } from './components/AccountDialog';
@@ -114,7 +115,6 @@ export default function App() {
     toggleTask,
     setTaskLabel,
     addTask,
-    addTasks,
     removeTask,
     moveTask,
     setTaskGroup,
@@ -122,8 +122,13 @@ export default function App() {
     clearChecks,
     applyStandingTasks,
     applyStandingGroups,
+    addNote,
+    setNoteText,
+    removeNote,
     flush,
   } = useWeek(store, ready, prefs.defaultTasks);
+
+  const calendar = useCalendar(signedIn ? uid : null, authSettled);
 
   /* Weeks built while signed out are pulled into the account on first sign-in.
      It is deliberately silent: being signed in is the whole promise that your
@@ -172,6 +177,10 @@ export default function App() {
      precisely what made the theme-name box unusable, and there is no reason
      to leave the trap armed for the next effect that needs one of these. */
   const closeAccount = useCallback(() => setAccountOpen(false), []);
+  const signInFromSettings = useCallback(() => {
+    setThemeOpen(false);
+    setAccountOpen(true);
+  }, []);
   const openTheme = useCallback(() => setThemeOpen(true), []);
   const closeTheme = useCallback(() => setThemeOpen(false), []);
   const closeGroupEdit = useCallback(() => setGroupEdit(null), []);
@@ -382,9 +391,12 @@ export default function App() {
     );
 
     await signOut();
+    forgetToken();
 
     if (leaving) {
       clearAccountCache(leaving);
+      // Always safe: the import is in the account, and another one is a click away.
+      clearLocalCalendar(leaving);
       if (prefsSaved) clearLocalPrefs(leaving);
     }
   };
@@ -448,28 +460,6 @@ export default function App() {
   const previousPct =
     previousWeek && weekTotals(previousWeek).total > 0 ? weekOverallPct(previousWeek) : null;
 
-  /* What this weekday held last week, minus whatever is already on it this
-     week — so the list shrinks as you use it and disappears once you've taken
-     everything worth taking. Capped at six: past that it stops being a nudge
-     and becomes a second list to read. */
-  const lastWeekDay = previousWeek?.days.find((d) => d.id === selectedDay.id) ?? null;
-  const alreadyHere = new Set(selectedDay.tasks.map((t) => t.label.trim().toLowerCase()));
-  const offered = new Set<string>();
-  const suggestions: Suggestion[] = [];
-  for (const task of lastWeekDay?.tasks ?? []) {
-    if (suggestions.length === 6) break;
-    const label = task.label.trim();
-    const key = label.toLowerCase();
-    // Deduped as well as filtered: two identical lines last Monday would
-    // otherwise offer the same words twice, under the same React key.
-    if (!label || alreadyHere.has(key) || offered.has(key)) continue;
-    offered.add(key);
-    /* Resolved rather than copied. A task from last week can point at a group
-       that has since been deleted, and an offer carrying a dead id would land
-       as a task nothing can show and nothing can find. */
-    suggestions.push({ label, groupId: groupById(prefs.groups, task.groupId)?.id ?? null });
-  }
-
   const handlers = {
     onToggle: (taskId: string) => toggleTask(selectedDay.id, taskId),
     onLabelChange: (taskId: string, label: string) =>
@@ -491,10 +481,17 @@ export default function App() {
        moving is the confirmation, and it is on screen either way. */
     onMoveTask: (taskId: string, toDayId: DayId) =>
       moveTask(selectedDay.id, taskId, toDayId),
-    suggestions,
-    onUseSuggestion: (s: Suggestion) => void addTask(selectedDay.id, s.label, s.groupId),
-    onUseAllSuggestions: (items: Suggestion[]) => addTasks(selectedDay.id, items),
+    events: calendar.byDate.get(selectedDay.date) ?? [],
+    onAddNote: () => addNote(selectedDay.id),
+    onNoteChange: (noteId: string, text: string) => setNoteText(selectedDay.id, noteId, text),
+    onDeleteNote: (noteId: string) => removeNote(selectedDay.id, noteId),
   };
+
+  const calendarDates = new Set(
+    week.days
+      .filter((d) => d.notes.some((n) => n.text.trim()) || calendar.byDate.has(d.date))
+      .map((d) => d.date),
+  );
 
   const saveGroup = (name: string, icon: IconId, carryAcross: boolean) => {
     if (!groupEdit) return;
@@ -575,6 +572,7 @@ export default function App() {
               selected={selected}
               today={today}
               onSelect={setSelected}
+              marked={calendarDates}
             />
           </div>
 
@@ -667,7 +665,7 @@ export default function App() {
         onSignOut={handleSignOut}
         defaultTasks={prefs.defaultTasks}
         onSaveDefaultTasks={saveDefaultTasks}
-        onApplyToWeek={applyStandingTasks}
+        onApplyToWeek={(tasks) => applyStandingTasks(tasks, today)}
         groups={prefs.groups}
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}
@@ -675,7 +673,14 @@ export default function App() {
         onHideScreen={hideScreen}
       />
 
-      <ThemeDialog open={themeOpen} onClose={closeTheme} theme={theme} />
+      <ThemeDialog
+        open={themeOpen}
+        onClose={closeTheme}
+        theme={theme}
+        calendar={calendar}
+        signedIn={signedIn}
+        onSignIn={signInFromSettings}
+      />
 
       {/* One instance for making and for editing. It reads its subject from
           `groupEdit` on open, so the two flows cannot drift apart. */}

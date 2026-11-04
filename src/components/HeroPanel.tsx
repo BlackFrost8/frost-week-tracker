@@ -56,10 +56,9 @@ export function HeroPanel({ week, previousPct }: { week: Week; previousPct: numb
       <p className="mt-5 text-sm text-frost-text-dim">tasks done this week</p>
 
       {/* One number, and only when it means something.
-          Last week is already loaded in full to feed the empty-day suggestions
-          and then thrown away, so this costs nothing to read. `null` covers
-          both a first-ever week and a week nobody planned — a bare "0%" there
-          would report a week that never happened as a week that was failed. */}
+          `null` covers both a first-ever week and a week nobody planned — a
+          bare "0%" there would report a week that never happened as a week
+          that was failed. */}
       {previousPct !== null && (
         <p className="mt-1 font-mono text-xs text-frost-text-faint">
           last week {previousPct}%

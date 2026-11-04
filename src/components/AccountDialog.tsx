@@ -39,6 +39,22 @@ function clean(tasks: StandingTask[]): StandingTask[] {
   return tasks.map((t) => ({ ...t, label: t.label.trim() })).filter((t) => t.label !== '');
 }
 
+/** What `next` puts on a day that `before` didn't: new tasks, and new days on old ones. */
+function additions(before: StandingTask[], next: StandingTask[]): StandingTask[] {
+  const had = new Map<string, Set<DayId>>();
+  for (const t of before) {
+    const key = t.label.trim().toLowerCase();
+    const days = had.get(key) ?? new Set<DayId>();
+    for (const d of t.days) days.add(d);
+    had.set(key, days);
+  }
+  return next.flatMap((t) => {
+    const old = had.get(t.label.trim().toLowerCase());
+    const days = old ? t.days.filter((d) => !old.has(d)) : t.days;
+    return days.length ? [{ ...t, days }] : [];
+  });
+}
+
 /**
  * The tasks seeded into a newly created week, and the days each one lands on.
  *
@@ -60,7 +76,9 @@ function StandingTasks({
   const [draft, setDraft] = useState<StandingTask[]>(tasks);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
-  const [applied, setApplied] = useState(false);
+  const initial = useRef(tasks);
+  const onApplyRef = useRef(onApplyToWeek);
+  onApplyRef.current = onApplyToWeek;
 
   /* Held in a ref, and deliberately not an effect dependency: saving lifts
      state in the parent, so a fresh `onSave` identity arrives on every save
@@ -117,9 +135,16 @@ function StandingTasks({
      never repeated. */
   useEffect(
     () => () => {
-      if (!unsaved.current) return;
-      unsaved.current = false;
-      onSaveRef.current(clean(draftRef.current));
+      const final = clean(draftRef.current);
+      if (unsaved.current) {
+        unsaved.current = false;
+        onSaveRef.current(final);
+      }
+      /* New standing tasks go onto the week on screen as the dialog closes,
+         not on each debounced save: that fires mid-word, and "gy" would land
+         on the board on the way to "gym". */
+      const added = additions(initial.current, final);
+      if (added.length) onApplyRef.current(added);
     },
     [],
   );
@@ -151,7 +176,9 @@ function StandingTasks({
   return (
     <div className="mt-7">
       <h3 className="text-sm text-frost-text">Standing tasks</h3>
-      <p className="mt-1.5 text-xs text-frost-text-faint">Added to each new week.</p>
+      <p className="mt-1.5 text-xs text-frost-text-faint">
+        Added to the rest of this week, and every new one.
+      </p>
 
       <div className="mt-4 flex flex-col gap-5">
         {draft.map((task, i) => (
@@ -237,24 +264,6 @@ function StandingTasks({
             className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
           >
             + add a standing task
-          </button>
-        )}
-
-        {/* New weeks pick these up on their own. This is for the week you're
-            already in, which is deliberately never rewritten behind your back —
-            so applying it is an explicit act, and it only ever adds what's
-            missing. Nothing is renamed, reordered or removed. */}
-        {draft.some((t) => t.label.trim()) && (
-          <button
-            type="button"
-            onClick={() => {
-              onApplyToWeek(clean(draft));
-              setApplied(true);
-              setTimeout(() => setApplied(false), 2500);
-            }}
-            className="text-sm text-frost-text-faint transition-colors hover:text-frost-cyan-300"
-          >
-            {applied ? 'added to this week' : 'add these to this week'}
           </button>
         )}
       </div>
