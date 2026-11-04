@@ -656,6 +656,16 @@ export default function App() {
             </div>
           </main>
         </div>
+
+        {/* Google requires the policy to be reachable from the homepage without signing in. */}
+        <footer className="text-center">
+          <a
+            href="./privacy.html"
+            className="text-xs text-frost-text-faint transition-colors duration-150 hover:text-frost-cyan-300"
+          >
+            privacy
+          </a>
+        </footer>
       </div>
 
       <AccountDialog
