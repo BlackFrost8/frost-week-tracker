@@ -70,10 +70,27 @@ secret** and add four secrets:
 | `ANDROID_KEY_ALIAS` | `upload` |
 | `ANDROID_KEY_PASSWORD` | The key password. Usually the same as the keystore password. |
 
+Common mistakes, each of which the build now reports by name:
+- The secret is saved under **Variables** or **Environment secrets** instead
+  of **Repository secrets**. Only repository secrets reach the build.
+- The name is slightly off (`ANDROID_KEYSTORE_B64`, a trailing space). It has
+  to be exactly `ANDROID_KEYSTORE_BASE64`.
+- The clipboard was empty when you pasted, so the secret was saved blank.
+  Re-run the copy command, then paste.
+
 ### 4. Build the bundle
 
-Go to **Actions → Android app → Run workflow** (on `main`). When it finishes,
-download the `frost-android-N` artifact. It contains:
+1. Open the repo's **Actions** tab.
+2. In the left-hand list, click **Android app**.
+3. A grey bar appears above the list of runs: *"This workflow has a
+   workflow_dispatch event trigger."* Click **Run workflow** on its right,
+   leave the branch as `main`, and confirm.
+
+When it finishes, open the run. If the summary says **Signed and ready for
+Play Console**, download the `frost-android-N` artifact at the bottom of the
+page. The summary also shows your **upload key SHA-256**, which step 7 uses.
+If the run fails at *Unpack the upload key*, the error says which secret to
+fix. The artifact contains:
 
 - `app-release.aab`: this is what you upload to Play
 - `app-release.apk`: for installing directly on your own phone to test
