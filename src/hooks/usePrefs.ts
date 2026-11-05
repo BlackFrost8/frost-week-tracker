@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EMPTY_PREFS, loadPrefs, savePrefs, type Prefs } from '../lib/prefs';
+import { EMPTY_PREFS, loadPrefs, savePrefs, type Prefs, type PrefsField } from '../lib/prefs';
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * `ready` matters: a week must not be created before the standing tasks are
@@ -26,8 +28,7 @@ export function usePrefs(authReady: boolean, uid: string | null) {
 
     loadPrefs()
       // Whatever is stored, unmodified. Nothing is seeded on a new account:
-      // an empty standing-task list is a real, chosen state, and the empty day
-      // card offers greyed prompts rather than five tasks to delete.
+      // an empty standing-task list is a real, chosen state.
       .then((loaded) => {
         if (active) apply(loaded);
       })
@@ -43,14 +44,53 @@ export function usePrefs(authReady: boolean, uid: string | null) {
     };
   }, [authReady, uid, apply]);
 
+  /* Coming back to the tab re-reads, the same way weeks do. Prefs used to be
+     read once at sign-in, so a tab left open for days went on showing — and
+     writing — the groups and goals it had started with, while another device
+     changed them. The load also retries any field whose write never landed.
+
+     Applied only when something actually differs: a fresh array identity for
+     the same standing tasks would re-run every effect keyed on them. */
+  useEffect(() => {
+    if (!authReady || !ready) return;
+    let active = true;
+    let inFlight = false;
+
+    const onShow = () => {
+      if (document.hidden || inFlight) return;
+      inFlight = true;
+      loadPrefs()
+        .then((loaded) => {
+          if (active && !sameValue(loaded, prefsRef.current)) apply(loaded);
+        })
+        .catch(() => {
+          /* Keep what is on screen; the next return tries again. */
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', onShow);
+      window.removeEventListener('focus', onShow);
+    };
+  }, [authReady, ready, uid, apply]);
+
   const update = useCallback(
     async (patch: Partial<Prefs>) => {
       const next = { ...prefsRef.current, ...patch };
       apply(next); // Optimistic: the local write inside savePrefs cannot fail.
+      // Only the fields this patch names are sent, so an edit to goals cannot
+      // carry a stale copy of groups along with it.
+      const fields = Object.keys(patch) as PrefsField[];
       // Callers fire this and walk away, so a dropped connection has to be
       // absorbed here or it surfaces as an unhandled rejection. The device
       // copy is written either way, and it is what the UI reads.
-      await savePrefs(next).catch(() => {});
+      await savePrefs(next, fields).catch(() => {});
     },
     [apply],
   );

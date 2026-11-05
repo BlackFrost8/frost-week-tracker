@@ -28,6 +28,10 @@ jobs:
 
       - run: npm ci
 
+      # The sync and migration rules are the code most able to lose someone's
+      # work, and the tests are what pin them down. A failure stops the deploy.
+      - run: npm test
+
       # The Firebase config is committed in src/lib/firebase-config.ts (public
       # client identifiers — Firestore rules are the real control), so no
       # repository secrets or variables are needed to deploy.

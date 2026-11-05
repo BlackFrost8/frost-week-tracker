@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Note } from '../types';
-import type { CalendarEvent } from '../lib/gcal';
+import { sinceText, type CalendarEvent } from '../lib/gcal';
+
+/** Past a day old, an import is worth mentioning where the events are read. */
+const STALE_MS = 24 * 60 * 60_000;
 
 type Props = {
   notes: Note[];
@@ -9,6 +12,11 @@ type Props = {
   onAddNote: () => string;
   onNoteChange: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
+  /** When the connected calendar was last imported; null when not connected. */
+  importedAt: string | null;
+  importing: boolean;
+  /** From a click: may open Google's popup when the tab holds no token. */
+  onRefresh: () => void;
 };
 
 /** "14:05" in the reader's own clock — 2:05 pm where that is the habit. */
@@ -92,20 +100,50 @@ function NoteRow({
  * from Google Calendar. Neither has a checkbox, and neither counts toward the
  * day's score.
  */
-export function DayCalendar({ notes, events, onAddNote, onNoteChange, onDeleteNote }: Props) {
+export function DayCalendar({
+  notes,
+  events,
+  onAddNote,
+  onNoteChange,
+  onDeleteNote,
+  importedAt,
+  importing,
+  onRefresh,
+}: Props) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const add = () => setFocusId(onAddNote());
+
+  /* The import only refreshes on its own while the tab holds Google's
+     hour-long token. After that the events stood still until somebody went
+     into settings, and the only sign of their age was a faint line in there —
+     so a moved meeting kept showing at its old time with nothing saying so. */
+  const stale = importedAt !== null && Date.now() - Date.parse(importedAt) > STALE_MS;
 
   return (
     <section className="frost-divider mt-6 pt-4" aria-label="Calendar">
       <p className="text-xs text-frost-text-faint">calendar</p>
+
+      {stale && (
+        <p className="mt-2 text-xs text-frost-text-dim">
+          imported {sinceText(importedAt)}
+          <span className="mx-2 text-frost-text-faint">·</span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={importing}
+            className="text-frost-cyan-300 transition-colors hover:text-frost-cyan-100 disabled:opacity-50"
+          >
+            {importing ? 'importing…' : 'refresh'}
+          </button>
+        </p>
+      )}
 
       {events.length > 0 && (
         <ul className="mt-2 flex flex-col">
           {events.map((event) => (
             <li key={event.id} className="flex items-baseline gap-3 py-1.5 text-sm">
               <span className="w-[4.5rem] shrink-0 font-mono text-xs text-frost-cyan-300">
-                {event.time ? formatTime(event.time) : 'all day'}
+                {event.time ? formatTime(event.time) : event.ongoing ? 'ongoing' : 'all day'}
               </span>
               <span className="min-w-0 flex-1 truncate text-frost-text-dim" title={event.title}>
                 {event.title}

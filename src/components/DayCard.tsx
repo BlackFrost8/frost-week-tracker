@@ -25,6 +25,10 @@ type Props = {
   onAddNote: () => string;
   onNoteChange: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
+  /** When the connected calendar was last imported; null when not connected. */
+  calendarImportedAt: string | null;
+  calendarImporting: boolean;
+  onRefreshCalendar: () => void;
 };
 
 /**
@@ -52,6 +56,9 @@ export function DayCard({
   onAddNote,
   onNoteChange,
   onDeleteNote,
+  calendarImportedAt,
+  calendarImporting,
+  onRefreshCalendar,
 }: Props) {
   const done = completedCount(day);
   const left = leftCount(day);
@@ -145,6 +152,9 @@ export function DayCard({
           onAddNote={onAddNote}
           onNoteChange={onNoteChange}
           onDeleteNote={onDeleteNote}
+          importedAt={calendarImportedAt}
+          importing={calendarImporting}
+          onRefresh={onRefreshCalendar}
         />
       </div>
     </section>
