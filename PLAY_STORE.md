@@ -129,7 +129,11 @@ Install from the internal testing link, then check:
       report what happened.
 - [ ] A task added on the phone appears on the web, and the other way round
 - [ ] Airplane mode: the app still opens and shows your week
-- [ ] Profile → *delete account* works (use a throwaway account)
+
+**Don't try *delete account* on your own account.** It is permanent. It only
+runs if someone opens it, types `delete` and confirms with Google, so it can
+never fire by accident. Play requires it to exist; nobody requires you to
+press it.
 
 ### 9. Closed testing (if your developer account is new)
 
