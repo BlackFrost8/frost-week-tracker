@@ -1,0 +1,12 @@
+# Build output and local tooling state.
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+
+# The upload key and anything holding its passwords must never be committed.
+*.jks
+*.keystore
+keystore.properties

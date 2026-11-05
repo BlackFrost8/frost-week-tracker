@@ -544,3 +544,15 @@ export function clearAccountCache(uid: string): boolean {
   localStorage.removeItem(metaKey(base));
   return true;
 }
+
+/**
+ * Forgets this account on this device completely, dirty or not — for after
+ * the account has been deleted, when there is no cloud left to protect the
+ * unsent edits for. `clearAccountCache` is the cautious version for sign-out.
+ */
+export function forgetAccountOnDevice(uid: string): void {
+  const base = mirrorKey(uid);
+  localStorage.removeItem(base);
+  localStorage.removeItem(metaKey(base));
+  localStorage.removeItem(migratedFlag(uid));
+}

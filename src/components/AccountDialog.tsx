@@ -32,6 +32,13 @@ type Props = {
   onAccountChanged: () => void;
   /** Draws the privacy curtain. The button exists for when Alt+B cannot. */
   onHideScreen: () => void;
+  /** Saves every week and setting as a JSON file. */
+  onExport: () => Promise<void>;
+  /**
+   * Deletes the account and everything in it. Must be called straight from a
+   * click: a Google account confirms through a popup that opens first thing.
+   */
+  onDeleteAccount: (password: string | null) => Promise<void>;
 };
 
 /** Trim, and drop the rows that are still blank. Days are left exactly as set. */
@@ -389,7 +396,7 @@ function friendlyAuthError(err: unknown): string | null {
     case 'auth/credential-already-in-use':
       return 'That password is already attached to a different account.';
     case 'auth/requires-recent-login':
-      return 'For safety this needs a fresh sign-in. Sign out, continue with Google again, then add the password.';
+      return 'For safety this needs a fresh sign-in. Sign out, sign in again, then try once more.';
     case 'auth/email-already-in-use':
       return 'There’s already an account with that email — sign in instead.';
     case 'auth/weak-password':
@@ -413,6 +420,137 @@ function friendlyAuthError(err: unknown): string | null {
     default:
       return err instanceof Error ? err.message : 'Could not sign in.';
   }
+}
+
+/**
+ * Download and deletion: what Google Play requires an app with accounts to
+ * offer, and what anyone reading the privacy policy would expect to find.
+ *
+ * Deletion sits behind a disclosure and a typed word. It is the one control
+ * in the app that cannot be undone, so it is kept faint, out of the way, and
+ * impossible to hit by a stray tap — but never hidden behind an email.
+ */
+function DataControls({
+  profile,
+  onExport,
+  onDelete,
+}: {
+  profile: Profile;
+  onExport: () => Promise<void>;
+  onDelete: (password: string | null) => Promise<void>;
+}) {
+  const [exporting, setExporting] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [word, setWord] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const confirmed = word.trim().toLowerCase() === 'delete';
+  const needsPassword = !profile.hasGoogle;
+
+  const runExport = () => {
+    setExporting(true);
+    setError(null);
+    onExport()
+      .catch(() => setError('Couldn’t gather your data. Check the connection and try again.'))
+      .finally(() => setExporting(false));
+  };
+
+  /* Not async, and `onDelete` is the first thing it does: Google's
+     confirmation is a popup, and a popup opened after an await is blocked. */
+  const runDelete = () => {
+    if (!confirmed || busy) return;
+    setBusy(true);
+    setError(null);
+    onDelete(needsPassword ? password : null)
+      .catch((err: unknown) => setError(friendlyAuthError(err)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="mt-6 flex flex-col items-center gap-3 text-sm">
+      <button
+        type="button"
+        onClick={runExport}
+        disabled={exporting}
+        className="text-frost-text-faint transition-colors hover:text-frost-text-dim disabled:opacity-50"
+      >
+        {exporting ? 'gathering…' : 'download my data'}
+      </button>
+
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-frost-text-faint transition-colors hover:text-frost-alert"
+        >
+          delete account
+        </button>
+      ) : (
+        <div className="frost-divider mt-2 w-full pt-5 text-left">
+          <p className="text-sm text-frost-text">Delete this account?</p>
+          <p className="mt-2 text-sm text-frost-text-dim">
+            Every week, task, note, group, goal, standing task, photo and imported calendar
+            event is deleted from your account, along with the account itself. This can’t be
+            undone. Download your data first if you want a copy.
+          </p>
+          <label className="mt-4 block text-xs text-frost-text-faint" htmlFor="delete-word">
+            type <span className="font-mono text-frost-text-dim">delete</span> to confirm
+          </label>
+          <input
+            id="delete-word"
+            value={word}
+            onChange={(e) => setWord(e.target.value)}
+            autoComplete="off"
+            className="frost-field mt-1 w-full bg-transparent py-1.5 text-sm text-frost-text outline-none"
+          />
+          {needsPassword && (
+            <>
+              <label className="mt-4 block text-xs text-frost-text-faint" htmlFor="delete-password">
+                your password
+              </label>
+              <input
+                id="delete-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                className="frost-field mt-1 w-full bg-transparent py-1.5 text-sm text-frost-text outline-none"
+              />
+            </>
+          )}
+          {error && (
+            <p className="mt-3 text-sm" style={{ color: 'var(--color-frost-alert)' }} role="alert">
+              {error}
+            </p>
+          )}
+          <div className="mt-5 flex items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setWord('');
+                setPassword('');
+                setError(null);
+              }}
+              className="text-frost-text-faint transition-colors hover:text-frost-text-dim"
+            >
+              keep my account
+            </button>
+            <button
+              type="button"
+              onClick={runDelete}
+              disabled={!confirmed || busy || (needsPassword && password === '')}
+              className="text-frost-alert transition-opacity disabled:opacity-40"
+            >
+              {busy ? 'deleting…' : needsPassword ? 'delete forever' : 'confirm with Google'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -537,6 +675,8 @@ export function AccountDialog({
   onSaveAvatar,
   onAccountChanged,
   onHideScreen,
+  onExport,
+  onDeleteAccount,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -814,6 +954,12 @@ export function AccountDialog({
             >
               sign out
             </button>
+
+            <DataControls
+              profile={profile}
+              onExport={onExport}
+              onDelete={(password) => onDeleteAccount(password).then(onClose)}
+            />
           </>
         )}
 

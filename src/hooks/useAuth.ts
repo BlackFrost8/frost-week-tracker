@@ -25,6 +25,8 @@ export type Profile = {
       by the email-enumeration protection that makes every failed sign-in
       report the same generic code. */
   hasPassword: boolean;
+  /** Whether Google is linked — which decides how deleting the account confirms it's you. */
+  hasGoogle: boolean;
 };
 
 function toProfile(user: User): Profile {
@@ -34,6 +36,7 @@ function toProfile(user: User): Profile {
     email: user.email,
     avatarUrl: user.photoURL,
     hasPassword: user.providerData.some((p) => p.providerId === 'password'),
+    hasGoogle: user.providerData.some((p) => p.providerId === 'google.com'),
   };
 }
 
