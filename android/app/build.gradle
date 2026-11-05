@@ -55,7 +55,7 @@ android {
     namespace "org.froststudio.planner"
     defaultConfig {
         applicationId "org.froststudio.planner"
-        minSdkVersion 21
+        minSdkVersion 24
         targetSdkVersion 36
         // Play rejects an upload whose versionCode isn't higher than the last
         // one. CI passes its run number; a local build falls back to 1.

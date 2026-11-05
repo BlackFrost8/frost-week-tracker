@@ -621,7 +621,11 @@ export default function App() {
             />
           </div>
 
-          <main className="grid gap-12 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_300px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
+          {/* `minmax(0,1fr)` below md as well: an implicit single column sizes
+              to its content's min-content width, and a task row's label
+              truncates rather than wraps — so one long task pushed the card,
+              and the whole page, wider than a 360px phone. */}
+          <main className="grid grid-cols-[minmax(0,1fr)] gap-12 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_300px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
             {/* THE DAY CARD IS FIRST, and that is a phone decision.
                 Below `md` this grid is one column, so source order is what the
                 reader gets — and the reader is usually standing between two
