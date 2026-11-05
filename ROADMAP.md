@@ -238,6 +238,13 @@ Market reference points:
 
 ## 5. A mobile app?
 
+> **Status, 5 Nov 2026:** The Android build is in place as a Trusted Web
+> Activity, not Capacitor. A TWA opens the live site, so Google sign-in,
+> Calendar and offline mode work without being rebuilt. That is the fastest
+> safe route onto Play. PWA install (§2.2) and account deletion and export
+> (§2.3) are done. Steps for the developer: `PLAY_STORE.md`. Capacitor (below)
+> stays the path for widgets later.
+
 Verdict: yes, eventually. But build it as a thin native shell around this
 same codebase, after the web version has users. Don't rewrite it.
 

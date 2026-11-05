@@ -667,6 +667,14 @@ to trust those.
   runs them before every deploy. Hooks and components are still untested.
   `npm install` of new dev dependencies currently needs `--legacy-peer-deps`
   (an npm 10 resolver crash on Vitest's optional peers); `npm ci` is unaffected.
+- **Android / Google Play (Nov 2026).** `android/` is a Bubblewrap-generated
+  Trusted Web Activity for `org.froststudio.planner` that opens the live site;
+  `.github/workflows/android.yml` builds the `.aab`/`.apk`. The site is now a
+  PWA (`public/manifest.webmanifest`, `public/sw.js`) with in-app account
+  deletion and data export. `public/.well-known/assetlinks.json` holds a
+  placeholder until the Play App Signing fingerprint is pasted in. Keep
+  `actions/upload-pages-artifact` at v3, or check that a newer version still
+  publishes the dot-directory `.well-known`. Full steps: `PLAY_STORE.md`.
 - **Sync rules changed (Nov 2026).** Weeks are decided by a cloud revision
   (`rev`), not device clocks, and a true conflict merges via `mergeWeeks`
   instead of dropping a side. Prefs are written per field
