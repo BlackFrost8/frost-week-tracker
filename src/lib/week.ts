@@ -267,6 +267,82 @@ export function groupTotals(week: Week, groupId: string): { done: number; total:
   return { done: tasks.filter((t) => t.task.done).length, total: tasks.length };
 }
 
+/* ── Merging ───────────────────────────────────────────────────────────────
+   Two copies of one week that were edited apart — an offline device and the
+   account, or signed-out work and the account it is moving into. There is no
+   common ancestor to diff against, so this cannot tell "deleted over there"
+   from "added over here". It errs towards keeping work: a task deleted on one
+   side may come back, but a task written on either side is never lost. */
+
+const labelKey = (label: string) => label.trim().toLowerCase();
+
+/**
+ * `primary`, plus anything only `secondary` has.
+ *
+ * A task is the same task when it shares an id or, failing that, a label.
+ * The label match matters: two devices that each created this week seeded
+ * their standing tasks under different ids, and matching on id alone would
+ * double every routine. A task ticked on either side stays ticked — ticking is
+ * by far the commonest edit, and un-ticking the rarest.
+ *
+ * Returns `primary` itself when `secondary` adds nothing, so a caller can tell
+ * a merge that changed nothing from one that needs writing.
+ */
+export function mergeWeeks(primary: Week, secondary: Week): Week {
+  let changed = false;
+
+  const days = primary.days.map((day) => {
+    const other = secondary.days.find((d) => d.id === day.id);
+    if (!other) return day;
+
+    const byId = new Map(other.tasks.map((t) => [t.id, t]));
+    const byLabel = new Map(other.tasks.map((t) => [labelKey(t.label), t]));
+    const matched = new Set<string>();
+    let dayChanged = false;
+
+    const tasks = day.tasks.map((task) => {
+      const twin = byId.get(task.id) ?? byLabel.get(labelKey(task.label));
+      if (!twin) return task;
+      matched.add(twin.id);
+      if (twin.done && !task.done) {
+        dayChanged = true;
+        return { ...task, done: true };
+      }
+      return task;
+    });
+
+    const have = new Set(tasks.map((t) => labelKey(t.label)));
+    for (const task of other.tasks) {
+      if (matched.has(task.id) || have.has(labelKey(task.label))) continue;
+      if (task.label.trim() === '') continue;
+      have.add(labelKey(task.label));
+      tasks.push(task);
+      dayChanged = true;
+    }
+
+    const noteIds = new Set(day.notes.map((n) => n.id));
+    const noteTexts = new Set(day.notes.map((n) => n.text.trim()));
+    const extraNotes = other.notes.filter(
+      (n) => n.text.trim() !== '' && !noteIds.has(n.id) && !noteTexts.has(n.text.trim()),
+    );
+
+    if (!dayChanged && extraNotes.length === 0) return day;
+    changed = true;
+    return { ...day, tasks, notes: [...day.notes, ...extraNotes] };
+  });
+
+  const pick = (key: 'focus' | 'reward' | 'affirmation') => {
+    if (primary[key].trim() !== '' || secondary[key].trim() === '') return primary[key];
+    changed = true;
+    return secondary[key];
+  };
+  const focus = pick('focus');
+  const reward = pick('reward');
+  const affirmation = pick('affirmation');
+
+  return changed ? { ...primary, focus, reward, affirmation, days } : primary;
+}
+
 /* ── Validation ────────────────────────────────────────────────────────────
    Anything arriving from localStorage or the network is untrusted: it may be
    from an older schema, hand-edited, or truncated. Normalise it into a

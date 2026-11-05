@@ -9,7 +9,13 @@ the code as of `2b73a54`.
 
 ## 1. Bugs (confirmed by reading the code)
 
-### 1.1 Groups, standing tasks and goals made while signed out vanish on first sign-in — **high**
+> **Status, 5 Nov 2026:** 1.1–1.7 are fixed, along with the stale comments in
+> 1.8. Each sync fix is covered by a test in `src/lib/*.test.ts` that fails on
+> the old code. Run `npm test`. CI now runs the tests before deploying. Still
+> open from 1.8: bundle size, HANDOFF §5.32, and size limits in
+> `firestore.rules`.
+
+### 1.1 Groups, standing tasks and goals made while signed out vanish on first sign-in — **high** — ✅ fixed
 
 `migrateLocalToCloud` moves signed-out *weeks* into the account. Nothing moves
 signed-out *prefs*. `loadPrefs` (`src/lib/prefs.ts:331`) reads only the
@@ -26,7 +32,7 @@ and never cleared, which is also a leak on a shared device.
 the anonymous prefs and then clear the anonymous key. Reuse the `migrated:{uid}`
 flag that weeks already use.
 
-### 1.2 One device's stale prefs overwrite another device's newer ones — **high**
+### 1.2 One device's stale prefs overwrite another device's newer ones — **high** — ✅ fixed
 
 Weeks re-read on focus. Prefs don't: `usePrefs` loads once per
 `[authReady, uid]` (`src/hooks/usePrefs.ts:22`), and every `updatePrefs` writes
@@ -44,7 +50,7 @@ present for prefs.
   of `setDoc` on the whole document. Then two devices editing different fields
   can't collide at all. Best.
 
-### 1.3 Offline prefs edits are discarded on the next online load — **medium**
+### 1.3 Offline prefs edits are discarded on the next online load — **medium** — ✅ fixed
 
 `loadPrefs` always lets the cloud copy win (`src/lib/prefs.ts:355`). Weeks have
 a `dirty` flag and a timestamp, so a newer unsynced local edit survives. Prefs
@@ -55,7 +61,7 @@ older cloud copy.
 **Fix:** give prefs the same `{updatedAt, dirty}` meta that weeks use, and the
 same "local wins only if dirty and newer" rule.
 
-### 1.4 The conflict rule trusts each device's own clock — **medium**
+### 1.4 The conflict rule trusts each device's own clock — **medium** — ✅ fixed
 
 `updatedAt` comes from `new Date()` on whichever device made the edit
 (`src/lib/storage.ts:68`), and `loadWeek`/`flushPending` compare those strings
@@ -69,7 +75,7 @@ week offline lose one side completely, with no merge.
 A per-task merge is the full fix, but it's probably not worth building until
 someone actually reports this.
 
-### 1.5 First sign-in silently deletes signed-out work for any week the account already has — **medium**
+### 1.5 First sign-in silently deletes signed-out work for any week the account already has — **medium** — ✅ fixed
 
 `migrateLocalToCloud` skips a week the account already holds
 (`src/lib/storage.ts:429`), then wipes the whole anonymous blob
@@ -81,12 +87,12 @@ nothing tells you.
 **Fix:** merge the two copies' tasks instead of dropping one. Failing that,
 keep the skipped weeks under a recoverable key and tell the user.
 
-### 1.6 Timed calendar events only appear on their start day — **low**
+### 1.6 Timed calendar events only appear on their start day — **low** — ✅ fixed
 
 `toEvents` (`src/lib/gcal.ts:170`) splits only *all-day* events across days. A
 timed event from Friday 22:00 to Sunday 10:00 shows on Friday and nowhere else.
 
-### 1.7 The calendar import goes stale without saying so — **low**
+### 1.7 The calendar import goes stale without saying so — **low** — ✅ fixed
 
 Auto-refresh only happens while the tab still holds an access token, which
 lasts about an hour. After that the imported events stay fixed until someone
@@ -111,7 +117,9 @@ the import is more than about a day old.
 
 ## 2. Structural gaps
 
-1. **No tests.** The sync code (`storage.ts`, `prefs.ts`) is the most
+1. **~~No tests.~~ Started.** Vitest is in, with 17 tests over merging,
+   calendar splitting, week sync, prefs sync and migration. Still untested:
+   the hooks and components. Original note: the sync code (`storage.ts`, `prefs.ts`) is the most
    intricate code in the repo, and it has the most "this was a data-loss bug"
    comments. Add Vitest and cover `normalizeWeek`, the week maths, and the
    `loadWeek`/`flushPending` decision table with Firestore stubbed out. Bugs
@@ -228,16 +236,64 @@ Market reference points:
 
 ---
 
-## 5. Suggested order
+## 5. A mobile app?
 
-1. Bugs 1.1 and 1.2 (data loss, small fixes)
-2. Vitest plus tests around the sync decision table, then bugs 1.3–1.5
+Verdict: yes, eventually. But build it as a thin native shell around this
+same codebase, after the web version has users. Don't rewrite it.
+
+**Where the instinct is right.** An app-store app does make paying easier.
+The card is already on file, one tap with Face ID completes the purchase, and
+a store listing looks more trustworthy than an unknown domain. Planners also
+gain real abilities as native apps that a website can't match: **home-screen
+widgets** (the single most-paid-for planner feature on phones), reliable
+**reminders** (local notifications) and offline launch.
+
+**Where it's wrong.** Being in the store doesn't bring users. Store search is
+dominated by established apps with years of ratings, and with no marketing a
+new planner gets close to zero downloads. People already pay subscriptions on
+websites all the time (Sunsama and Notion both started web-first). What makes
+people pay is trust and habit, and an app icon only partly substitutes for
+either.
+
+**What it costs:**
+| | iOS (App Store) | Android (Google Play) |
+| --- | --- | --- |
+| Developer account | $99 / year | $25 once |
+| Store cut on subscriptions | 15% (Small Business Program) | 15% |
+| Before launch | Review for each release | New personal accounts need a closed test (about 12 testers for 14 days) before production |
+| Must-haves | In-app purchase for digital subscriptions (US apps may also link out to web payment). **Sign in with Apple**, since Google sign-in is offered. **In-app account deletion.** | In-app account deletion; Data Safety form |
+
+**The practical route: Capacitor.** It wraps the existing React build in a
+native shell, so most of the code carries over unchanged. The known rework:
+- **Sign-in.** `signInWithPopup` doesn't work inside an app webview. Switch to
+  native Google sign-in and Sign in with Apple through
+  `@capacitor-firebase/authentication`. The Calendar scope can be requested
+  the same way.
+- **Payments.** Use RevenueCat (free under $2.5k/month of revenue) on top of
+  StoreKit and Play Billing, plus the web checkout from §4. That way one
+  "pro" entitlement works on every platform, and nobody pays twice.
+- **Native extras that justify the app.** Home-screen widget (needs some
+  Swift/Kotlin code), local reminders, haptics on check-off.
+- **Account deletion and JSON export (§2.3)** become mandatory, not optional.
+
+**Recommended sequence:** PWA install first (§2.2). It costs about a day,
+puts an icon on the home screen, and shows whether anyone actually keeps the
+app. Then Android through Capacitor (cheap account, faster review). Then iOS,
+once there is a widget worth paying for.
+
+---
+
+## 6. Suggested order
+
+1. ~~Bugs 1.1 and 1.2~~ ✅
+2. ~~Vitest plus tests around the sync decision table, then bugs 1.3–1.5~~ ✅
 3. PWA manifest and service worker, code-splitting
 4. Start Google OAuth verification (it runs in the background for weeks)
 5. Undo toast, "move to next week", end-of-week carry-over
 6. Account deletion and JSON export
 7. Habit streaks and a cross-week history view (this becomes the core of Pro)
 8. Lemon Squeezy, a Cloud Function and the `pro` claim, then launch Pro
+9. Capacitor: Android first, then iOS with a widget (§5)
 
 ---
 

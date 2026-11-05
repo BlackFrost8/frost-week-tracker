@@ -8,7 +8,8 @@ import {
   type Firestore,
 } from 'firebase/firestore/lite';
 import type { StorageKind, Week } from '../types';
-import { normalizeWeek } from './week';
+import { mergeWeeks, normalizeWeek, uid as newId } from './week';
+import { migrateAnonPrefs } from './prefs';
 import { auth, db } from './firebase';
 
 /**
@@ -35,8 +36,19 @@ const metaKey = (base: string) => `${base}:meta`;
 
 type WeekShape = Record<string, Week>;
 
-/** When each week was last written here, and whether the cloud has it yet. */
-type Meta = { updatedAt: string; dirty: boolean };
+/**
+ * When each week was last written here, whether the cloud has it yet, and
+ * which cloud revision the local copy was built on.
+ *
+ * `rev` is what decides a sync, not `updatedAt`. Timestamps come from each
+ * device's own clock, and a school Chromebook running five minutes fast used
+ * to win against newer work from a correctly set PC. A revision is a random id
+ * the writer stamps on the cloud document: if the cloud still carries the one
+ * this device last saw, nobody else has written since, whatever any clock says.
+ * `updatedAt` survives as the identity of one local snapshot, and as the
+ * tie-break for documents written before revisions existed.
+ */
+type Meta = { updatedAt: string; dirty: boolean; rev?: string };
 type MetaShape = Record<string, Meta>;
 
 function readJSON<T extends object>(key: string, fallback: T): T {
@@ -66,15 +78,27 @@ function putLocal(base: string, week: Week, dirty: boolean): string {
 
   const meta = readMeta(base);
   const updatedAt = new Date().toISOString();
-  meta[week.weekStart] = { updatedAt, dirty };
+  // The revision is kept: an edit is still built on whatever the cloud last held.
+  meta[week.weekStart] = withRev({ updatedAt, dirty }, meta[week.weekStart]?.rev);
   writeJSON(metaKey(base), meta);
   return updatedAt;
 }
 
+/** `rev` left off rather than undefined, so the JSON stays tidy. */
+function withRev(meta: Meta, rev: string | undefined): Meta {
+  return rev ? { ...meta, rev } : meta;
+}
+
 /** Unconditional. For the one case that genuinely replaces the local copy. */
-function writeMeta(base: string, weekStart: string, updatedAt: string, dirty: boolean): void {
+function writeMeta(
+  base: string,
+  weekStart: string,
+  updatedAt: string,
+  dirty: boolean,
+  rev: string | undefined,
+): void {
   const meta = readMeta(base);
-  meta[weekStart] = { updatedAt, dirty };
+  meta[weekStart] = withRev({ updatedAt, dirty }, rev);
   writeJSON(metaKey(base), meta);
 }
 
@@ -89,10 +113,16 @@ function writeMeta(base: string, weekStart: string, updatedAt: string, dirty: bo
  * timestamp is the identity of the snapshot, so an exact match is the only
  * safe case to clear on.
  */
-function markClean(base: string, weekStart: string, updatedAt: string): void {
+function markClean(base: string, weekStart: string, updatedAt: string, rev: string): void {
   const current = readMeta(base)[weekStart];
-  if (current && current.updatedAt !== updatedAt) return;
-  writeMeta(base, weekStart, updatedAt, false);
+  if (current && current.updatedAt !== updatedAt) {
+    /* Still dirty — but the cloud now holds this device's own write, and the
+       newer edit was made on top of it. Recording the revision is what lets
+       that edit win its own sync later instead of reading as a conflict. */
+    writeMeta(base, weekStart, current.updatedAt, current.dirty, rev);
+    return;
+  }
+  writeMeta(base, weekStart, updatedAt, false, rev);
 }
 
 function dropLocal(base: string, weekStart: string): void {
@@ -119,8 +149,31 @@ function adoptCloud(base: string, weekStart: string, cloudRaw: CloudDoc): Week {
   const weeks = readWeeks(base);
   weeks[weekStart] = week;
   writeJSON(base, weeks);
-  writeMeta(base, weekStart, cloudRaw.updatedAt || new Date().toISOString(), false);
+  writeMeta(base, weekStart, cloudRaw.updatedAt || new Date().toISOString(), false, cloudRaw.rev);
   return week;
+}
+
+/**
+ * What a dirty local copy becomes when the cloud also has the week.
+ *
+ * - The cloud still carries the revision this device last saw: nobody else
+ *   has written since, so the local edit simply goes up.
+ * - Anything else means another device wrote while this one's edit was stuck
+ *   on the device. Both are kept — the local copy's own edits, plus whatever
+ *   only the cloud copy has — rather than one being thrown away. Picking a
+ *   winner by timestamp is what used to lose work, and it trusted two clocks
+ *   that need not agree.
+ *
+ * Documents written before revisions existed carry none, and nor does any
+ * local meta; for exactly that pair the old timestamp rule still applies, so
+ * an upgrade doesn't turn every pending edit into a merge.
+ */
+function resolveDirty(local: Week, meta: Meta, cloudRaw: CloudDoc): Week {
+  if (cloudRaw.rev !== undefined && cloudRaw.rev === meta.rev) return local;
+  if (cloudRaw.rev === undefined && meta.rev === undefined) {
+    if (meta.updatedAt > (cloudRaw.updatedAt ?? '')) return local;
+  }
+  return mergeWeeks(local, normalizeWeek(cloudRaw, local.weekStart));
 }
 
 /* ── Local ─────────────────────────────────────────────────────────────── */
@@ -177,7 +230,7 @@ function weeksCol(database: Firestore, uid: string) {
   return collection(database, 'users', uid, 'weeks');
 }
 
-type CloudDoc = Week & { updatedAt?: string };
+type CloudDoc = Week & { updatedAt?: string; rev?: string };
 
 /**
  * One in-flight cloud write per week document, queued in issue order.
@@ -213,6 +266,7 @@ function queueWrite(key: string, run: () => Promise<void>): Promise<void> {
 
 async function pushWeek(uid: string, week: Week, updatedAt: string): Promise<void> {
   return queueWrite(`${uid}:${week.weekStart}`, async () => {
+    const rev = newId();
     await setDoc(doc(weeksCol(requireDb(), uid), week.weekStart), {
       weekStart: week.weekStart,
       focus: week.focus,
@@ -220,8 +274,9 @@ async function pushWeek(uid: string, week: Week, updatedAt: string): Promise<voi
       affirmation: week.affirmation,
       days: week.days,
       updatedAt,
+      rev,
     });
-    markClean(mirrorKey(uid), week.weekStart, updatedAt);
+    markClean(mirrorKey(uid), week.weekStart, updatedAt, rev);
   });
 }
 
@@ -280,14 +335,17 @@ export const cloudStore: WeekStore = {
       return week;
     }
 
-    // Both sides have it. An unsynced local edit that is newer than the cloud
-    // copy is the one case where local wins — otherwise the cloud is truth,
-    // because it is the only copy another device could have written.
-    const cloudAt = cloudRaw.updatedAt ?? '';
-    if (localRaw && localMeta?.dirty && localMeta.updatedAt > cloudAt) {
-      const week = normalizeWeek(localRaw, weekStart);
+    // Both sides have it. An unsynced local edit is never discarded: it goes
+    // up as it is, or merged with what another device wrote meanwhile (see
+    // `resolveDirty`). Otherwise the cloud is truth, because it is the only
+    // copy another device could have written.
+    if (localRaw && localMeta?.dirty) {
+      const local = normalizeWeek(localRaw, weekStart);
+      const week = resolveDirty(local, localMeta, cloudRaw);
+      // A merge is a new edit, and it gets a fresh local stamp like any other.
+      const stamp = week === local ? localMeta.updatedAt : putLocal(base, week, true);
       try {
-        await pushWeek(uid, week, localMeta.updatedAt);
+        await pushWeek(uid, week, stamp);
       } catch {
         /* Stays dirty. */
       }
@@ -353,18 +411,20 @@ export async function flushPending(): Promise<number> {
     const entry = readMeta(base)[weekStart];
     if (!raw || !entry?.dirty) continue;
 
-    /* The same rule `loadWeek` applies, and deliberately the same direction:
-       an unsent local edit only wins if it is strictly newer than the cloud
-       copy. Otherwise another device wrote something this one has not seen,
-       and that copy is adopted here rather than being overwritten — which also
-       clears the dirty flag, so the week stops being retried forever. */
-    if (cloudRaw && !(entry.updatedAt > (cloudRaw.updatedAt ?? ''))) {
-      adoptCloud(base, weekStart, cloudRaw);
-      continue;
+    /* The same rule `loadWeek` applies. If another device wrote while this
+       edit was stuck here, the two are merged rather than one overwriting the
+       other — this used to adopt the cloud copy and drop the local edit, or
+       the reverse, depending on which device's clock ran ahead. */
+    const local = normalizeWeek(raw, weekStart);
+    let toPush = local;
+    let stamp = entry.updatedAt;
+    if (cloudRaw) {
+      toPush = resolveDirty(local, entry, cloudRaw);
+      if (toPush !== local) stamp = putLocal(base, toPush, true);
     }
 
     try {
-      await pushWeek(uid, normalizeWeek(raw, weekStart), entry.updatedAt);
+      await pushWeek(uid, toPush, stamp);
       pushed += 1;
     } catch {
       break; // Still offline — leave the rest for the next attempt.
@@ -383,9 +443,10 @@ export function hasPendingWrites(): boolean {
 
 /* ── Migration ─────────────────────────────────────────────────────────────
    The first time an account signs in on a device, anything built up while
-   signed out is pushed into it. A week that already exists in the account is
-   left alone — the account is the source of truth once it exists, and we
-   never overwrite something another device wrote. */
+   signed out is pushed into it — weeks here, and groups, routine and goals
+   through `migrateAnonPrefs`. A week that already exists in the account keeps
+   everything the account has, and gains whatever was only written signed out:
+   nothing another device wrote is overwritten, and nothing typed here is lost. */
 
 /** Keyed per account: signing a second Google account in on the same browser
     used to silently skip its migration, because the flag was global. */
@@ -417,6 +478,8 @@ export async function migrateLocalToCloud(): Promise<number> {
   const localWeeks = readWeeks(ANON_KEY);
   const weekStarts = Object.keys(localWeeks);
   if (weekStarts.length === 0) {
+    // Groups, a routine and goals can exist with no week yet written.
+    await migrateAnonPrefs();
     clearAnonWork();
     localStorage.setItem(flag, 'yes');
     return 0;
@@ -426,7 +489,6 @@ export async function migrateLocalToCloud(): Promise<number> {
   let uploaded = 0;
 
   for (const weekStart of weekStarts) {
-    if (existing.has(weekStart)) continue;
     const week = normalizeWeek(localWeeks[weekStart], weekStart);
     // An empty shell week isn't worth uploading.
     const hasContent =
@@ -436,9 +498,26 @@ export async function migrateLocalToCloud(): Promise<number> {
       week.days.some((d) => d.tasks.some((t) => t.label.trim() !== ''));
     if (!hasContent) continue;
 
+    if (existing.has(weekStart)) {
+      /* The account already has this week — written on another device. It
+         used to be skipped here, and the anon blob cleared below, so every
+         task typed signed-out that week was destroyed without a word. The
+         account's copy leads; the signed-out tasks are added to it. */
+      const current = await cloudStore.loadWeek(weekStart);
+      const merged = current ? mergeWeeks(current, week) : week;
+      if (merged === current) continue;
+      await cloudStore.saveWeek(merged);
+      uploaded += 1;
+      continue;
+    }
+
     await cloudStore.saveWeek(week);
     uploaded += 1;
   }
+
+  /* Prefs before the anon work is cleared: the weeks just moved point at the
+     signed-out groups by id, and without those groups every mark is lost. */
+  await migrateAnonPrefs();
 
   /* Only reached if every `saveWeek` above resolved — one throw propagates out
      of here, App leaves the flag unset, and the next sign-in retries against

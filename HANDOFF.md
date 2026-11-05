@@ -661,10 +661,18 @@ to trust those.
 - **Habit Tracker panel.** Visible in the user's original screenshot; original spec §9
   defers it to v2. Never built — no reference to it anywhere in `src/`. Still the most
   likely next feature request.
-- **No tests.** No test runner is installed; `package.json` has no `test` script.
-  Every verification in this project's history has been manual in-browser DOM
-  assertion, which is exactly the kind of check that doesn't survive a refactor.
-  **This is the largest remaining structural gap** — see the readiness note below.
+- **Tests: started (Nov 2026).** `npm test` runs Vitest over `src/lib/*.test.ts`:
+  week merging, calendar splitting, week sync, prefs sync and first-sign-in
+  migration, against an in-memory Firestore (`src/test/fakeFirestore.ts`). CI
+  runs them before every deploy. Hooks and components are still untested.
+  `npm install` of new dev dependencies currently needs `--legacy-peer-deps`
+  (an npm 10 resolver crash on Vitest's optional peers); `npm ci` is unaffected.
+- **Sync rules changed (Nov 2026).** Weeks are decided by a cloud revision
+  (`rev`), not device clocks, and a true conflict merges via `mergeWeeks`
+  instead of dropping a side. Prefs are written per field
+  (`setDoc(..., {merge: true})`), carry per-field revisions in `stamps`, keep a
+  dirty list for offline edits, and are re-read on focus. First sign-in now
+  migrates signed-out prefs too (`migrateAnonPrefs`). See ROADMAP.md §1.
 - **Account deletion** is not implemented. Sign-out is. Worth knowing if this ever
   needs to answer a data-deletion request.
 - **The password-linking repair (§5.32) has never been run end to end.** The code

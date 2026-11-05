@@ -147,8 +147,8 @@ export function groupById(groups: TaskGroup[], id: string | null): TaskGroup | n
 
 /* There is deliberately no starter list. A routine you didn't choose is
    someone else's routine, and five tasks you have to delete before you can
-   begin are worse than a blank card. An empty day offers what that weekday
-   held last week instead — nothing is saved until one is clicked. */
+   begin are worse than a blank card. An empty day simply says nothing is
+   planned yet. */
 
 /**
  * The starter list that used to be written into every new account's prefs.
@@ -323,69 +323,203 @@ function writeLocal(uid: string | null, prefs: Prefs): void {
 
 const prefsDoc = (uid: string) => doc(db!, 'users', uid, 'settings', 'prefs');
 
+/* ── Sync bookkeeping ──────────────────────────────────────────────────────
+   Prefs are five unrelated fields sharing one document, and they are synced
+   field by field.
+
+   They used to be written as one whole document from whatever this tab had
+   in memory, and re-read only at sign-in. So a PC tab left open since Monday,
+   ticking a goal on Thursday, wrote Monday's copy of every field — and the
+   group the Chromebook had added on Wednesday was gone, with no error
+   anywhere. Each write now carries only the field it changed, merged into the
+   document, so editing goals cannot touch groups at all.
+
+   Each field also carries a revision in the document's `stamps` map, and the
+   device remembers which revision it last saw (`base`) and which fields hold
+   edits the cloud has not acknowledged (`dirty`). Without that, a load simply
+   let the cloud win, and edits made while offline were overwritten by the
+   older cloud copy on the next reload — the very thing weeks were fixed for. */
+
+export type PrefsField = keyof Prefs;
+const FIELDS: PrefsField[] = ['defaultTasks', 'groups', 'goals', 'avatar', 'tourDone'];
+
+type Stamps = Partial<Record<PrefsField, string>>;
+type PrefsMeta = { dirty: PrefsField[]; base: Stamps };
+
+const metaKey = (uid: string) => `${localKey(uid)}:meta`;
+
+function readStamps(raw: unknown): Stamps {
+  const out: Stamps = {};
+  if (typeof raw !== 'object' || raw === null) return out;
+  for (const field of FIELDS) {
+    const value = (raw as Record<string, unknown>)[field];
+    if (typeof value === 'string' && value) out[field] = value;
+  }
+  return out;
+}
+
+function readMeta(uid: string): PrefsMeta {
+  try {
+    const raw = JSON.parse(localStorage.getItem(metaKey(uid)) ?? 'null') as Partial<PrefsMeta> | null;
+    const dirty = Array.isArray(raw?.dirty)
+      ? FIELDS.filter((f) => (raw.dirty as unknown[]).includes(f))
+      : [];
+    return { dirty, base: readStamps(raw?.base) };
+  } catch {
+    return { dirty: [], base: {} };
+  }
+}
+
+function writeMeta(uid: string, meta: PrefsMeta): void {
+  try {
+    localStorage.setItem(metaKey(uid), JSON.stringify(meta));
+  } catch {
+    /* Private mode: the edit still goes up, it just can't be retried later. */
+  }
+}
+
+function hasContent(prefs: Prefs): boolean {
+  return (
+    prefs.defaultTasks.length > 0 ||
+    prefs.groups.length > 0 ||
+    prefs.goals.length > 0 ||
+    prefs.avatar !== null ||
+    prefs.tourDone
+  );
+}
+
+/** `primary`'s entries in their order, then whatever only `secondary` has. */
+function mergeList<T>(primary: T[], secondary: T[], key: (t: T) => string, cap: number): T[] {
+  const have = new Set(primary.map(key));
+  const extra = secondary.filter((t) => !have.has(key(t)));
+  return extra.length ? [...primary, ...extra].slice(0, cap) : primary;
+}
+
+/**
+ * Two copies of the prefs, edited apart, made into one.
+ *
+ * As with weeks there is no common ancestor, so this keeps rather than
+ * guesses: `primary`'s version of anything both copies hold, plus anything
+ * only `secondary` has. A group deleted on one side can come back; a group
+ * made on either side is never lost.
+ */
+export function mergePrefs(primary: Prefs, secondary: Prefs): Prefs {
+  return {
+    defaultTasks: mergeList(
+      primary.defaultTasks,
+      secondary.defaultTasks,
+      (t) => t.label.trim().toLowerCase(),
+      20,
+    ),
+    groups: mergeList(primary.groups, secondary.groups, (g) => g.id, MAX_GROUPS),
+    goals: mergeList(primary.goals, secondary.goals, (g) => g.id, MAX_GOALS),
+    avatar: primary.avatar ?? secondary.avatar,
+    tourDone: primary.tourDone || secondary.tourDone,
+  };
+}
+
+/** One field copied across, typed so the field and its value always agree. */
+function take<K extends PrefsField>(target: Prefs, source: Prefs, field: K): void {
+  target[field] = source[field];
+}
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * The prefs this device should now hold, given what the cloud just returned
+ * (`raw`, or null for no document).
+ *
+ * Synchronous on purpose, and reading the device copy only here, after the
+ * round trip: an edit made while the request was in the air is exactly the
+ * one this must not get wrong.
+ *
+ * Per field: one with no unsent edit takes the cloud's value. One with an
+ * unsent edit keeps it — outright when the cloud still carries the revision
+ * this device last saw, merged with the cloud's value when another device
+ * wrote that field meanwhile — and is sent up again.
+ */
+function reconcile(uid: string, raw: unknown): Prefs {
+  const local = readLocal(uid);
+  const meta = readMeta(uid);
+
+  if (raw === null) {
+    // First sign-in on this account: adopt whatever this device holds for it,
+    // minus the abandoned seed, which must not be carried into the account.
+    const cleaned = withoutLegacyStarter(local);
+    writeLocal(uid, cleaned);
+    if (hasContent(cleaned)) void savePrefs(cleaned, FIELDS).catch(() => {});
+    return cleaned;
+  }
+
+  const cloud = normalise(raw);
+  const stamps = readStamps((raw as Record<string, unknown>).stamps);
+  const merged = mergePrefs(local, cloud);
+  const result: Prefs = { ...cloud };
+  const push: PrefsField[] = [];
+
+  for (const field of FIELDS) {
+    if (!meta.dirty.includes(field)) {
+      if (stamps[field]) meta.base[field] = stamps[field];
+      else delete meta.base[field];
+      continue;
+    }
+    push.push(field);
+    take(result, stamps[field] === meta.base[field] ? local : merged, field);
+  }
+
+  // Persist the clearing rather than filtering on read: otherwise every
+  // device keeps re-hiding a list that is still sitting in the document, and
+  // the next version to read it plainly would bring the five tasks back.
+  const cleaned = withoutLegacyStarter(result);
+  if (cleaned !== result && !push.includes('defaultTasks')) push.push('defaultTasks');
+
+  writeLocal(uid, cleaned);
+  writeMeta(uid, meta);
+  if (push.length) void savePrefs(cleaned, push).catch(() => {});
+  return cleaned;
+}
+
 /**
  * Local first, exactly like `cloudStore`: the device copy is what the UI reads,
  * the cloud is a mirror. Returns whatever it can — a network failure here must
  * not stop a week from loading.
+ *
+ * Cheap enough to call on every return to the tab, and `usePrefs` does: that
+ * re-read is how one device ever sees another's groups, routine and goals.
  */
 export async function loadPrefs(): Promise<Prefs> {
   const uid = auth?.currentUser?.uid ?? null;
-  const local = withoutLegacyStarter(readLocal(uid));
   if (!uid || !db) {
+    const local = withoutLegacyStarter(readLocal(uid));
     // Signed out the fix is local-only, and savePrefs is the write either way.
     if (isLegacyStarter(readLocal(uid).defaultTasks)) await savePrefs(local);
     return local;
   }
 
+  let raw: unknown;
   try {
     const snap = await getDoc(prefsDoc(uid));
-    if (!snap.exists()) {
-      // First sign-in on this account: adopt whatever was set up offline —
-      // minus the abandoned seed, which must not be carried into the account.
-      if (
-        local.defaultTasks.length > 0 ||
-        local.groups.length > 0 ||
-        local.goals.length > 0 ||
-        local.avatar ||
-        local.tourDone
-      )
-        await savePrefs(local);
-      return local;
-    }
-    const cloud = normalise(snap.data());
-    const cleaned = withoutLegacyStarter(cloud);
-    // Persist the clearing rather than filtering on read: otherwise every
-    // device keeps re-hiding a list that is still sitting in the document, and
-    // the next version to read it plainly would bring the five tasks back.
-    if (cleaned !== cloud) {
-      await savePrefs(cleaned);
-      return cleaned;
-    }
-    writeLocal(uid, cloud);
-    return cloud;
+    raw = snap.exists() ? snap.data() : null;
   } catch {
-    return local;
+    return withoutLegacyStarter(readLocal(uid));
   }
+  return reconcile(uid, raw);
 }
 
 /**
  * Cloud writes go out one at a time.
  *
  * `firestore/lite` keeps no local mutation queue — every `setDoc` is a bare
- * HTTP request — so two saves in flight together can land in either order.
- * Each one writes the whole document, so the straggler doesn't merely lose its
- * own field: an older snapshot arriving late puts the *previous* avatar or the
- * previous task list back over the newer one. Saving a picture while the
- * standing-task debounce is still in the air is enough to do it. And because
- * `writeLocal` already succeeded, the device that made the edit goes on
- * showing the right value — the loss only surfaces on another device, or on
- * the next read from the cloud.
- *
- * Ordering is the whole fix. Every save merges from the latest local state at
- * the moment it is called, so writes issued in order are correct in order;
- * they only needed to stay in that order on the way out.
+ * HTTP request — so two saves in flight together can land in either order,
+ * and an older value arriving late would put the previous avatar or task list
+ * back over the newer one. Ordering is the fix: every save is built from the
+ * latest local state at the moment it is called, so writes issued in order
+ * are correct in order; they only needed to stay in that order on the way out.
  */
 let queued: Promise<unknown> = Promise.resolve();
+
+/** The revision of the newest write issued for each `uid:field`, this tab. */
+const latestRev = new Map<string, string>();
 
 /**
  * Resolves once every queued prefs write has landed, and rejects if the last
@@ -405,37 +539,100 @@ export function flushPrefs(): Promise<void> {
  * devtools. The uid scoping kept it off the screen, which is not the same as
  * it being gone.
  *
- * Only safe once `flushPrefs` has resolved — there is no dirty flag here the
- * way there is for weeks, so an unsent edit exists nowhere else.
+ * Only safe once `flushPrefs` has resolved, since an unsent edit exists
+ * nowhere else.
  */
 export function clearLocalPrefs(uid: string): void {
   try {
     localStorage.removeItem(localKey(uid));
+    localStorage.removeItem(metaKey(uid));
   } catch {
     /* Private mode. Nothing was stored to begin with. */
   }
 }
 
-export function savePrefs(prefs: Prefs): Promise<void> {
+/**
+ * Writes the prefs to the device, then sends `fields` — only those — to the
+ * account.
+ *
+ * The device write is synchronous and cannot fail. The fields are flagged
+ * dirty before the request and cleared only when it lands, and only if no
+ * newer write of the same field was issued meanwhile; a field still dirty at
+ * the next load is sent again then.
+ */
+export function savePrefs(prefs: Prefs, fields: PrefsField[] = FIELDS): Promise<void> {
   const uid = auth?.currentUser?.uid ?? null;
   const clean = normalise(prefs);
   writeLocal(uid, clean); // Synchronous, cannot fail.
-  if (!uid || !db) return Promise.resolve();
+  if (!uid || !db || fields.length === 0) return Promise.resolve();
+
+  const meta = readMeta(uid);
+  meta.dirty = FIELDS.filter((f) => meta.dirty.includes(f) || fields.includes(f));
+  writeMeta(uid, meta);
+
+  const rev = newId();
+  const payload: Record<string, unknown> = {};
+  const stamps: Stamps = {};
+  for (const field of fields) {
+    payload[field] = clean[field];
+    stamps[field] = rev;
+    latestRev.set(`${uid}:${field}`, rev);
+  }
+  payload.stamps = stamps;
 
   // The leading catch is load-bearing: without it one failed write leaves a
   // rejected promise at the head of the queue and every later save is dropped.
   const write = queued
     .catch(() => {})
-    .then(() =>
-      setDoc(prefsDoc(uid), {
-        defaultTasks: clean.defaultTasks,
-        groups: clean.groups,
-        goals: clean.goals,
-        avatar: clean.avatar,
-        tourDone: clean.tourDone,
-      }),
-    );
+    .then(async () => {
+      // `merge` is the per-field part: the document's other fields, and the
+      // other entries in `stamps`, are left exactly as they are.
+      await setDoc(prefsDoc(uid), payload, { merge: true });
+      const after = readMeta(uid);
+      for (const field of fields) {
+        after.base[field] = rev;
+        if (latestRev.get(`${uid}:${field}`) === rev) {
+          after.dirty = after.dirty.filter((f) => f !== field);
+        }
+      }
+      writeMeta(uid, after);
+    });
 
   queued = write;
   return write.then(() => {});
+}
+
+/**
+ * Moves the groups, routine and goals set up while signed out into the
+ * account that just signed in. Called by `migrateLocalToCloud`, once per
+ * account per device, alongside the weeks.
+ *
+ * It did not exist, and the weeks went alone: every task arrived pointing at a
+ * group id the account had never heard of, so every group mark vanished, and
+ * the routine and goals stayed behind in a signed-out slot nothing read again.
+ *
+ * The account's own prefs lead; the signed-out ones only add to them. Throws
+ * if the account can't be read, so a migration attempted offline is simply
+ * retried at the next sign-in rather than merged against a guess.
+ */
+export async function migrateAnonPrefs(): Promise<void> {
+  const uid = auth?.currentUser?.uid ?? null;
+  if (!uid || !db) return;
+
+  const anon = withoutLegacyStarter(readLocal(null));
+  if (hasContent(anon)) {
+    const snap = await getDoc(prefsDoc(uid));
+    const account = reconcile(uid, snap.exists() ? snap.data() : null);
+    const merged = mergePrefs(account, anon);
+    const changed = FIELDS.filter((f) => !sameValue(merged[f], account[f]));
+    if (changed.length) await savePrefs(merged, changed);
+  }
+
+  // The signed-out copy is now in the account; left here it is a leak to the
+  // next person who signs in on this device.
+  try {
+    localStorage.removeItem(ANON_KEY);
+  } catch {
+    /* Private mode. */
+  }
 }

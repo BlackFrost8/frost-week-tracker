@@ -252,10 +252,8 @@ export default function App() {
    *
    * Seeded to the current weekday rather than to Monday. The first week shown
    * is always the current one, so starting on Monday meant rendering the wrong
-   * card and correcting it in the effect below one frame later. That was
-   * visible as a flash, and the empty-day prompts made it costly: Monday
-   * claimed three prompts, today claimed three more, and the first three were
-   * marked as seen without anybody having seen them.
+   * card and correcting it in the effect below one frame later, which was
+   * visible as a flash.
    */
   const [selected, setSelected] = useState<DayId>(() => DAY_IDS[(new Date().getDay() + 6) % 7]);
 
@@ -485,6 +483,9 @@ export default function App() {
     onAddNote: () => addNote(selectedDay.id),
     onNoteChange: (noteId: string, text: string) => setNoteText(selectedDay.id, noteId, text),
     onDeleteNote: (noteId: string) => removeNote(selectedDay.id, noteId),
+    calendarImportedAt: calendar.connected ? calendar.importedAt : null,
+    calendarImporting: calendar.status === 'importing',
+    onRefreshCalendar: calendar.refresh,
   };
 
   const calendarDates = new Set(
