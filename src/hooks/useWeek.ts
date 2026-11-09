@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DayId, Note, SyncState, Task, Week } from '../types';
 import type { StandingNote, StandingTask } from '../lib/prefs';
 import { flushPending, type WeekStore } from '../lib/storage';
-import { addDays, createWeek, currentWeekStart, standingFor, uid } from '../lib/week';
+import {
+  addDays,
+  addStandingNotes,
+  createWeek,
+  currentWeekStart,
+  fromISODate,
+  mondayOf,
+  standingFor,
+  uid,
+} from '../lib/week';
 import { useToday } from './useToday';
 
 const SAVE_DEBOUNCE_MS = 300;
@@ -59,11 +68,94 @@ export type StandingGroupChange = {
  *
  * Identical-reference-on-no-change, for the same reason as above.
  */
-function refileFromStanding(task: Task, changes: Map<string, StandingGroupChange>): Task {
-  const change = changes.get(task.label.trim().toLowerCase());
-  if (!change || change.to === task.groupId) return task;
-  if (task.groupId !== null && task.groupId !== change.from) return task;
-  return { ...task, groupId: change.to };
+function refileFromStanding<T extends { groupId: string | null }>(
+  item: T,
+  text: string,
+  changes: Map<string, StandingGroupChange>,
+): T {
+  const change = changes.get(text.trim().toLowerCase());
+  if (!change || change.to === item.groupId) return item;
+  if (item.groupId !== null && item.groupId !== change.from) return item;
+  return { ...item, groupId: change.to };
+}
+
+function changesByLabel(edits: StandingGroupChange[]): Map<string, StandingGroupChange> {
+  const changes = new Map<string, StandingGroupChange>();
+  for (const edit of edits) {
+    const label = edit.label.trim().toLowerCase();
+    if (label) changes.set(label, { ...edit, label });
+  }
+  return changes;
+}
+
+/**
+ * Changing a standing task's or note's group re-files what is already on the
+ * board.
+ *
+ * Standing items are seeded only when a week is *created*, so before this the
+ * mark you had just chosen reached next week and nothing you could see. The
+ * reconcile itself lives in `useWeek`; what lives here is *which* standing
+ * items changed, and what they changed from.
+ *
+ * Only the entries whose group actually moved in this edit are passed on.
+ * Handing over the whole list instead would make every edit re-file every
+ * match — so taking one out of a group by hand held until you next touched an
+ * unrelated standing item, and then silently undid itself. Diffing means a
+ * change to "water" cannot disturb "strength training".
+ *
+ * Both directions travel. Clearing a standing item's group used to be dropped
+ * here on the grounds that a sweep must never overrule you, which meant
+ * choosing "no group" left every instance on the week still wearing the old
+ * mark and nothing to remove it with but seven visits to seven days. The
+ * previous group goes along with the new one instead, so the reconcile can
+ * leave alone anything you had moved elsewhere yourself.
+ *
+ * The first map seen is recorded without being applied. Prefs arrive
+ * asynchronously, so every load starts as `[]` and then becomes the real list
+ * — reading that as an edit would re-file on every single refresh.
+ */
+export function useStandingRefile(
+  items: { label: string; groupId: string | null }[],
+  active: boolean,
+  apply: (changes: StandingGroupChange[]) => void,
+) {
+  const groupMap = useMemo(() => {
+    const byLabel: Record<string, string | null> = {};
+    for (const item of items) {
+      const key = item.label.trim().toLowerCase();
+      if (key) byLabel[key] = item.groupId;
+    }
+    return byLabel;
+  }, [items]);
+
+  const applied = useRef<Record<string, string | null> | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      /* Forget the baseline rather than keep it. The next list to arrive
+         belongs to a different session — signing in, signing out — and its
+         groups are a different account's ids entirely, so diffing the two
+         would file this week's items into groups that were never ours. A
+         fresh sighting is the honest reading of it. */
+      applied.current = null;
+      return;
+    }
+    const previous = applied.current;
+    applied.current = groupMap;
+    if (previous === null) return;
+
+    const changed: StandingGroupChange[] = [];
+    for (const item of items) {
+      const label = item.label.trim().toLowerCase();
+      if (!label) continue;
+      // A label that wasn't in the list before reads as "was in no group",
+      // which is what a newly typed standing item in fact was.
+      const from = previous[label] ?? null;
+      if (from === item.groupId) continue;
+      changed.push({ label, from, to: item.groupId });
+    }
+    if (changed.length > 0) apply(changed);
+  }, [active, groupMap, apply, items]);
 }
 
 /**
@@ -420,7 +512,7 @@ export function useWeek(
   const addNote = useCallback(
     (dayId: DayId) => {
       const id = uid();
-      mapNotes(dayId, (notes) => [...notes, { id, text: '' }]);
+      mapNotes(dayId, (notes) => [...notes, { id, text: '', groupId: null }]);
       return id;
     },
     [mapNotes],
@@ -429,6 +521,12 @@ export function useWeek(
   const setNoteText = useCallback(
     (dayId: DayId, noteId: string, text: string) =>
       mapNotes(dayId, (notes) => notes.map((n) => (n.id === noteId ? { ...n, text } : n))),
+    [mapNotes],
+  );
+
+  const setNoteGroup = useCallback(
+    (dayId: DayId, noteId: string, groupId: string | null) =>
+      mapNotes(dayId, (notes) => notes.map((n) => (n.id === noteId ? { ...n, groupId } : n))),
     [mapNotes],
   );
 
@@ -538,23 +636,40 @@ export function useWeek(
     [mutate],
   );
 
-  /** `applyStandingTasks` for calendar notes: only adds, from `fromDate` on. */
+  /**
+   * Adds standing notes to every day they are set for, from the current week
+   * on: the week on screen, and later weeks that are already saved.
+   *
+   * Earlier days of this week are included, unlike tasks: a note has no
+   * checkbox, so it cannot read as missed. Saved later weeks are included
+   * because seeding only reaches a week as it is created. Past weeks are left
+   * as they were.
+   */
   const applyStandingNotes = useCallback(
-    (standing: StandingNote[], fromDate?: string) =>
-      mutate((w) => {
-        let changed = false;
-        const days = w.days.map((day) => {
-          if (fromDate && day.date < fromDate) return day;
-          const have = new Set(day.notes.map((n) => n.text.trim().toLowerCase()));
-          const missing = standingFor(standing, day.id)
-            .filter((n) => !have.has(n.label.trim().toLowerCase()))
-            .map((n) => ({ id: uid(), text: n.label.trim() }));
-          if (!missing.length) return day;
-          changed = true;
-          return { ...day, notes: [...day.notes, ...missing] };
-        });
-        return changed ? { ...w, days } : w;
-      }),
+    async (standing: StandingNote[], today: string) => {
+      const store = storeRef.current;
+      const from = mondayOf(fromISODate(today));
+      const fill = (w: Week) => (w.weekStart < from ? w : addStandingNotes(w, standing));
+
+      mutate(fill);
+
+      const saved = await store.listWeekStarts().catch(() => [] as string[]);
+      for (const weekStart of saved) {
+        if (weekStart < from) continue;
+        // Through `mutate` when open, or its own debounced save would undo this.
+        if (weekRef.current?.weekStart === weekStart) {
+          mutate(fill);
+          continue;
+        }
+        try {
+          const week = await store.loadWeek(weekStart);
+          const next = week && fill(week);
+          if (next && next !== week) await store.saveWeek(next);
+        } catch {
+          /* Offline. `saveWeek` has kept it locally and flagged it for retry. */
+        }
+      }
+    },
     [mutate],
   );
 
@@ -578,24 +693,39 @@ export function useWeek(
   const applyStandingGroups = useCallback(
     (edits: StandingGroupChange[]) =>
       mutate((w) => {
-        const changes = new Map<string, StandingGroupChange>();
-        for (const edit of edits) {
-          const label = edit.label.trim().toLowerCase();
-          if (label) changes.set(label, { ...edit, label });
-        }
+        const changes = changesByLabel(edits);
         if (changes.size === 0) return w;
 
         let changed = false;
         const days = w.days.map((day) => {
           let dayChanged = false;
           const tasks = day.tasks.map((task) => {
-            const filed = refileFromStanding(task, changes);
+            const filed = refileFromStanding(task, task.label, changes);
             if (filed !== task) dayChanged = true;
             return filed;
           });
           if (!dayChanged) return day;
           changed = true;
           return { ...day, tasks };
+        });
+        return changed ? { ...w, days } : w;
+      }),
+    [mutate],
+  );
+
+  /** `applyStandingGroups` for calendar notes, matched on their text. */
+  const applyStandingNoteGroups = useCallback(
+    (edits: StandingGroupChange[]) =>
+      mutate((w) => {
+        const changes = changesByLabel(edits);
+        if (changes.size === 0) return w;
+
+        let changed = false;
+        const days = w.days.map((day) => {
+          const notes = day.notes.map((note) => refileFromStanding(note, note.text, changes));
+          if (notes.every((note, i) => note === day.notes[i])) return day;
+          changed = true;
+          return { ...day, notes };
         });
         return changed ? { ...w, days } : w;
       }),
@@ -651,8 +781,10 @@ export function useWeek(
     applyStandingTasks,
     applyStandingNotes,
     applyStandingGroups,
+    applyStandingNoteGroups,
     addNote,
     setNoteText,
+    setNoteGroup,
     removeNote,
     flush,
   };

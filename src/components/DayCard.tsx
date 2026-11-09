@@ -25,6 +25,9 @@ type Props = {
   onAddNote: () => string;
   onNoteChange: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
+  onNoteGroupChange: (noteId: string, groupId: string | null) => void;
+  /** Undefined at the group cap — see MAX_GROUPS. */
+  onRequestNewNoteGroup?: (noteId: string) => void;
   /** When the connected calendar was last imported; null when not connected. */
   calendarImportedAt: string | null;
   calendarImporting: boolean;
@@ -56,6 +59,8 @@ export function DayCard({
   onAddNote,
   onNoteChange,
   onDeleteNote,
+  onNoteGroupChange,
+  onRequestNewNoteGroup,
   calendarImportedAt,
   calendarImporting,
   onRefreshCalendar,
@@ -152,6 +157,9 @@ export function DayCard({
           onAddNote={onAddNote}
           onNoteChange={onNoteChange}
           onDeleteNote={onDeleteNote}
+          groups={groups}
+          onNoteGroupChange={onNoteGroupChange}
+          onRequestNewGroup={onRequestNewNoteGroup}
           importedAt={calendarImportedAt}
           importing={calendarImporting}
           onRefresh={onRefreshCalendar}

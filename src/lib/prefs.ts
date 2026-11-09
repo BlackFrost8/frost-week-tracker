@@ -34,6 +34,7 @@ export type StandingTask = {
 export type StandingNote = {
   label: string;
   days: DayId[];
+  groupId: string | null;
 };
 
 /** Applies to standing tasks and standing notes, each list on its own. */
@@ -231,12 +232,6 @@ function toStandingTask(raw: unknown): StandingTask | null {
   return { label, days, groupId };
 }
 
-/** Rebuilt field by field, so no `groupId` reaches a note. */
-function toStandingNote(raw: unknown): StandingNote | null {
-  const task = toStandingTask(raw);
-  return task && { label: task.label, days: task.days };
-}
-
 /** Same contract as `toStandingTask`: trusted shape out, or nothing. */
 function toGroup(raw: unknown): TaskGroup | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -285,7 +280,7 @@ function normalise(raw: unknown): Prefs {
 
   const defaultNotes = Array.isArray(r.defaultNotes)
     ? r.defaultNotes
-        .map(toStandingNote)
+        .map(toStandingTask)
         .filter((n): n is StandingNote => n !== null)
         .slice(0, MAX_STANDING)
     : [];

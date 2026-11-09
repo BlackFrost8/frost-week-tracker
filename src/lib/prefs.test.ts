@@ -63,7 +63,7 @@ describe('prefs sync', () => {
   });
 
   it('keeps a standing note made offline through the next reload', async () => {
-    const note = { label: 'bring gym bag', days: ['mon' as const] };
+    const note = { label: 'bring gym bag', days: ['mon' as const], groupId: 'g1' };
     cloud.docs.set(PATH, { goals: [goal('a')] });
     const loaded = await loadPrefs();
 
