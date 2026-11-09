@@ -46,6 +46,18 @@ type Props = {
 
 type StandingItem = { label: string; days: DayId[]; groupId: string | null };
 
+const blankItem = (): StandingItem => ({ label: '', days: [...DAY_IDS], groupId: null });
+
+/**
+ * Filtering the canonical order keeps the stored array stable rather than
+ * appending days in the order they were clicked.
+ */
+function toggledDays(days: DayId[], day: DayId): DayId[] {
+  return days.includes(day)
+    ? days.filter((x) => x !== day)
+    : DAY_IDS.filter((x) => x === day || days.includes(x));
+}
+
 /** Trim, and drop the rows that are still blank. Days are left exactly as set. */
 function clean<T extends StandingItem>(items: T[]): T[] {
   return items.map((t) => ({ ...t, label: t.label.trim() })).filter((t) => t.label !== '');
@@ -74,12 +86,16 @@ function additions<T extends StandingItem>(before: T[], next: T[]): T[] {
  * free, but each one is also a Firestore document write, and typing "Wake up
  * at 6:00" would be nineteen of them.
  */
-function useStandingDraft<T extends StandingItem>(
-  saved: T[],
-  onSave: (items: T[]) => void,
-  onApplyToWeek: (items: T[]) => void,
+function useStandingDraft(
+  saved: StandingItem[],
+  onSave: (items: StandingItem[]) => void,
+  onApplyToWeek: (items: StandingItem[]) => void,
 ) {
-  const [draft, setDraft] = useState<T[]>(saved);
+  const [draft, setDraft] = useState<StandingItem[]>(saved);
+  /** What is in the add field, not yet part of the list. */
+  const [pending, setPending] = useState(blankItem);
+  /** The row the last add created, so that row alone animates in. */
+  const [addedAt, setAddedAt] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
   const initial = useRef(saved);
@@ -95,8 +111,7 @@ function useStandingDraft<T extends StandingItem>(
 
   /* There is deliberately NO effect syncing `draft` back from `saved`.
      `onSave` strips blank rows before persisting, so a "sync from props" step
-     would fire 600ms after you pressed "add a standing task" and delete the
-     empty row you were about to type into — which is exactly what it did.
+     would delete a row 600ms after you cleared it to retype it.
      The dialog unmounts this component when it closes, so the initial state
      above is the only sync that's needed. */
 
@@ -104,6 +119,8 @@ function useStandingDraft<T extends StandingItem>(
      over the first render's `draft` and would otherwise save a stale one. */
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
 
   /* True from the moment an edit arms the timer until that save actually goes
      out. The timer handle cannot answer this on its own: the cleanup below
@@ -141,8 +158,10 @@ function useStandingDraft<T extends StandingItem>(
      never repeated. */
   useEffect(
     () => () => {
-      const final = clean(draftRef.current);
-      if (unsaved.current) {
+      // Text left in the add field is kept: closing must not lose typing.
+      const typed = pendingRef.current.label.trim() !== '';
+      const final = clean(typed ? [...draftRef.current, pendingRef.current] : draftRef.current);
+      if (unsaved.current || typed) {
         unsaved.current = false;
         onSaveRef.current(final);
       }
@@ -162,24 +181,31 @@ function useStandingDraft<T extends StandingItem>(
 
   const toggleDay = (i: number, day: DayId) =>
     setDraft((d) =>
-      d.map((t, idx) =>
-        idx === i
-          ? {
-              ...t,
-              // Filtering the canonical order keeps the stored array stable
-              // rather than appending days in the order they were clicked.
-              days: t.days.includes(day)
-                ? t.days.filter((x) => x !== day)
-                : DAY_IDS.filter((x) => x === day || t.days.includes(x)),
-            }
-          : t,
-      ),
+      d.map((t, idx) => (idx === i ? { ...t, days: toggledDays(t.days, day) } : t)),
     );
 
   const setGroupAt = (i: number, groupId: string | null) =>
     setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
 
-  return { draft, setDraft, setAt, removeAt, toggleDay, setGroupAt };
+  const addPending = () => {
+    const label = pending.label.trim();
+    if (label === '') return;
+    setAddedAt(draft.length);
+    setDraft((d) => [...d, { ...pending, label }]);
+    setPending(blankItem());
+  };
+
+  return {
+    draft,
+    setAt,
+    removeAt,
+    toggleDay,
+    setGroupAt,
+    pending,
+    setPending,
+    addPending,
+    addedAt,
+  };
 }
 
 function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -245,142 +271,134 @@ function DayPicker({
   );
 }
 
-/** The tasks seeded into a newly created week, and the days each one lands on. */
-function StandingTasks({
-  tasks,
+/** A standing list: the items already on it, and the field that adds to it. */
+function StandingList({
+  noun,
+  placeholder,
+  items,
   onSave,
   onApplyToWeek,
   groups,
 }: {
-  tasks: StandingTask[];
-  onSave: (tasks: StandingTask[]) => void;
-  onApplyToWeek: (tasks: StandingTask[]) => void;
+  noun: 'task' | 'note';
+  placeholder: string;
+  items: StandingItem[];
+  onSave: (items: StandingItem[]) => void;
+  onApplyToWeek: (items: StandingItem[]) => void;
   groups: TaskGroup[];
 }) {
-  const { draft, setDraft, setAt, removeAt, toggleDay, setGroupAt } = useStandingDraft(
-    tasks,
-    onSave,
-    onApplyToWeek,
-  );
+  const {
+    draft,
+    setAt,
+    removeAt,
+    toggleDay,
+    setGroupAt,
+    pending,
+    setPending,
+    addPending,
+    addedAt,
+  } = useStandingDraft(items, onSave, onApplyToWeek);
+  const addRef = useRef<HTMLInputElement>(null);
+  const canAdd = pending.label.trim() !== '';
+  const newName = pending.label.trim() || `new standing ${noun}`;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    addPending();
+    // Back to the field, so a whole routine can be typed in one go.
+    addRef.current?.focus();
+  };
 
   return (
     <>
-      <div className="mt-4 flex flex-col gap-5">
-        {draft.map((task, i) => (
-          <div key={i} className="flex flex-col gap-2">
-            <div className="flex items-center gap-3">
-              <input
-                value={task.label}
-                onChange={(e) => setAt(i, e.target.value)}
-                placeholder="Something you do every day"
-                aria-label={`Standing task ${i + 1}`}
-                className="frost-field min-w-0 flex-1 text-sm"
-              />
-              {/* Deliberately no "new group" item: this dialog is already
-                  open, and a second one stacked on top of it would trap focus
-                  between two panels that each restore it on close. Groups are
-                  made in the panel on the main screen. */}
-              <GroupMenu
-                groups={groups}
-                value={task.groupId}
-                onSelect={(groupId) => setGroupAt(i, groupId)}
-                subject={task.label || `standing task ${i + 1}`}
-                className="-m-2 h-9 w-9 shrink-0"
-                size={15}
-              />
-              <RemoveButton label={task.label || 'this task'} onClick={() => removeAt(i)} />
-            </div>
+      {draft.length > 0 && (
+        <div className="mt-4 flex flex-col gap-5">
+          {draft.map((item, i) => {
+            const subject = item.label || `standing ${noun} ${i + 1}`;
+            return (
+              <div key={i} className={`flex flex-col gap-2 ${i === addedAt ? 'frost-rise' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <input
+                    value={item.label}
+                    onChange={(e) => setAt(i, e.target.value)}
+                    placeholder={placeholder}
+                    aria-label={`Standing ${noun} ${i + 1}`}
+                    className="frost-field min-w-0 flex-1 text-sm"
+                  />
+                  {/* Deliberately no "new group" item: this dialog is already
+                      open, and a second one stacked on top of it would trap
+                      focus between two panels that each restore it on close.
+                      Groups are made in the panel on the main screen. */}
+                  <GroupMenu
+                    groups={groups}
+                    value={item.groupId}
+                    onSelect={(groupId) => setGroupAt(i, groupId)}
+                    subject={subject}
+                    className="-m-2 h-9 w-9 shrink-0"
+                    size={15}
+                  />
+                  <RemoveButton
+                    label={item.label || `this ${noun}`}
+                    onClick={() => removeAt(i)}
+                  />
+                </div>
 
-            <DayPicker
-              days={task.days}
-              subject={task.label || `standing task ${i + 1}`}
-              onToggle={(day) => toggleDay(i, day)}
+                <DayPicker
+                  days={item.days}
+                  subject={subject}
+                  onToggle={(day) => toggleDay(i, day)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {draft.length < MAX_STANDING && (
+        <form
+          onSubmit={submit}
+          className={`flex flex-col gap-2 ${
+            draft.length > 0 ? 'frost-divider mt-5 pt-5' : 'mt-4'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <input
+              ref={addRef}
+              value={pending.label}
+              onChange={(e) => setPending((p) => ({ ...p, label: e.target.value }))}
+              placeholder={placeholder}
+              aria-label={`New standing ${noun}`}
+              className="frost-field min-w-0 flex-1 text-sm"
             />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-        {draft.length < MAX_STANDING && (
-          <button
-            type="button"
-            onClick={() =>
-              setDraft((d) => [...d, { label: '', days: [...DAY_IDS], groupId: null }])
-            }
-            className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
-          >
-            + add a standing task
-          </button>
-        )}
-      </div>
-    </>
-  );
-}
-
-/** The calendar notes seeded into a newly created week. */
-function StandingNotes({
-  notes,
-  onSave,
-  onApplyToWeek,
-  groups,
-}: {
-  notes: StandingNote[];
-  onSave: (notes: StandingNote[]) => void;
-  onApplyToWeek: (notes: StandingNote[]) => void;
-  groups: TaskGroup[];
-}) {
-  const { draft, setDraft, setAt, removeAt, toggleDay, setGroupAt } = useStandingDraft(
-    notes,
-    onSave,
-    onApplyToWeek,
-  );
-
-  return (
-    <>
-      <div className="mt-4 flex flex-col gap-5">
-        {draft.map((note, i) => (
-          <div key={i} className="flex flex-col gap-2">
-            <div className="flex items-center gap-3">
-              <input
-                value={note.label}
-                onChange={(e) => setAt(i, e.target.value)}
-                placeholder="Something to remember"
-                aria-label={`Standing note ${i + 1}`}
-                className="frost-field min-w-0 flex-1 text-sm"
-              />
-              <GroupMenu
-                groups={groups}
-                value={note.groupId}
-                onSelect={(groupId) => setGroupAt(i, groupId)}
-                subject={note.label || `standing note ${i + 1}`}
-                className="-m-2 h-9 w-9 shrink-0"
-                size={15}
-              />
-              <RemoveButton label={note.label || 'this note'} onClick={() => removeAt(i)} />
-            </div>
-
-            <DayPicker
-              days={note.days}
-              subject={note.label || `standing note ${i + 1}`}
-              onToggle={(day) => toggleDay(i, day)}
+            <GroupMenu
+              groups={groups}
+              value={pending.groupId}
+              onSelect={(groupId) => setPending((p) => ({ ...p, groupId }))}
+              subject={newName}
+              className="-m-2 h-9 w-9 shrink-0"
+              size={15}
             />
+            <button
+              type="submit"
+              disabled={!canAdd}
+              aria-label={`Add ${newName}`}
+              className={`shrink-0 rounded px-3.5 py-1.5 text-sm transition-colors duration-150 ${
+                canAdd
+                  ? 'bg-frost-cyan-900 text-frost-cyan-200 hover:text-frost-cyan-100'
+                  : 'text-frost-text-faint'
+              }`}
+            >
+              add
+            </button>
           </div>
-        ))}
-      </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-        {draft.length < MAX_STANDING && (
-          <button
-            type="button"
-            onClick={() =>
-              setDraft((d) => [...d, { label: '', days: [...DAY_IDS], groupId: null }])
-            }
-            className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
-          >
-            + add a standing note
-          </button>
-        )}
-      </div>
+          <DayPicker
+            days={pending.days}
+            subject={newName}
+            onToggle={(day) => setPending((p) => ({ ...p, days: toggledDays(p.days, day) }))}
+          />
+        </form>
+      )}
     </>
   );
 }
@@ -438,16 +456,20 @@ function StandingLists({
       </div>
 
       <div hidden={view !== 'tasks'}>
-        <StandingTasks
-          tasks={tasks}
+        <StandingList
+          noun="task"
+          placeholder="Something you do every day"
+          items={tasks}
           onSave={onSaveTasks}
           onApplyToWeek={onApplyTasks}
           groups={groups}
         />
       </div>
       <div hidden={view !== 'notes'}>
-        <StandingNotes
-          notes={notes}
+        <StandingList
+          noun="note"
+          placeholder="Something to remember"
+          items={notes}
           onSave={onSaveNotes}
           onApplyToWeek={onApplyNotes}
           groups={groups}
