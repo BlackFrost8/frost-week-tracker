@@ -42,6 +42,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
       'Put a task in a group with the tag button on its row, or while you are typing it.',
       'The group\u2019s icon shows next to the task, and its bar shows how much of that group is done.',
       'Open a group to see everything in it. Click a task there to jump to its day.',
+      'Notes go in a group the same way. They are listed below the tasks, after a line.',
     ],
   },
   {
@@ -50,7 +51,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
       'Open your profile picture, or "sign in", and list the tasks you do regularly.',
       'They are added to every new week, and a new one joins the rest of this week when you close the dialog.',
       'Choose which days each one appears on, and give it a group to carry.',
-      'Switch to standing notes to repeat a calendar note on the days you choose.',
+      'Switch to standing notes to repeat a calendar note on the days you choose. A new one joins this week and every later week when you close the dialog.',
     ],
   },
   {

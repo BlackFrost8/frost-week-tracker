@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Note } from '../types';
 import { sinceText, type CalendarEvent } from '../lib/gcal';
+import { groupById, type TaskGroup } from '../lib/prefs';
+import { GroupMenu } from './GroupMenu';
+import { TaskIcon } from './TaskIcon';
 
 /** Past a day old, an import is worth mentioning where the events are read. */
 const STALE_MS = 24 * 60 * 60_000;
@@ -12,6 +15,10 @@ type Props = {
   onAddNote: () => string;
   onNoteChange: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
+  groups: TaskGroup[];
+  onNoteGroupChange: (noteId: string, groupId: string | null) => void;
+  /** Undefined at the group cap — see MAX_GROUPS. */
+  onRequestNewGroup?: (noteId: string) => void;
   /** When the connected calendar was last imported; null when not connected. */
   importedAt: string | null;
   importing: boolean;
@@ -34,14 +41,21 @@ function NoteRow({
   onChange,
   onDelete,
   onContinue,
+  groups,
+  onGroupChange,
+  onRequestNewGroup,
 }: {
   note: Note;
   autoFocus: boolean;
   onChange: (text: string) => void;
   onDelete: () => void;
   onContinue: () => void;
+  groups: TaskGroup[];
+  onGroupChange: (groupId: string | null) => void;
+  onRequestNewGroup?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const group = groupById(groups, note.groupId);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
@@ -73,7 +87,25 @@ function NoteRow({
         aria-label="Note"
         className="min-w-0 flex-1 bg-transparent text-sm text-frost-text outline-none placeholder:text-frost-text-faint"
       />
-      <span className="frost-row-tools flex shrink-0 items-center transition-opacity duration-150">
+      {group && (
+        <span className="shrink-0 text-frost-cyan-300" title={group.name}>
+          <TaskIcon icon={group.icon} size={14} strokeWidth={2} />
+        </span>
+      )}
+      <span className="frost-row-tools flex shrink-0 items-center gap-1 transition-opacity duration-150">
+        {/* Not on a blank note: opening the menu blurs the input, and a blank
+            note deletes itself on blur. */}
+        {note.text.trim() !== '' && (
+          <GroupMenu
+            groups={groups}
+            value={note.groupId}
+            onSelect={onGroupChange}
+            onNewGroup={onRequestNewGroup}
+            subject={note.text}
+            showCurrent={false}
+            className="h-6 w-6"
+          />
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -106,6 +138,9 @@ export function DayCalendar({
   onAddNote,
   onNoteChange,
   onDeleteNote,
+  groups,
+  onNoteGroupChange,
+  onRequestNewGroup,
   importedAt,
   importing,
   onRefresh,
@@ -163,6 +198,11 @@ export function DayCalendar({
               onChange={(text) => onNoteChange(note.id, text)}
               onDelete={() => onDeleteNote(note.id)}
               onContinue={add}
+              groups={groups}
+              onGroupChange={(groupId) => onNoteGroupChange(note.id, groupId)}
+              onRequestNewGroup={
+                onRequestNewGroup ? () => onRequestNewGroup(note.id) : undefined
+              }
             />
           ))}
         </div>

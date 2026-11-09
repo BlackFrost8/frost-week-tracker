@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DayId } from './types';
 import type { IconId } from './lib/icons';
 import {
@@ -14,7 +14,7 @@ import { useClickRipple } from './hooks/useClickRipple';
 import { usePrivacyBlur } from './hooks/usePrivacyBlur';
 import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
-import { useWeek, type StandingGroupChange } from './hooks/useWeek';
+import { useStandingRefile, useWeek } from './hooks/useWeek';
 import { useUpcomingWeeks } from './hooks/useUpcomingWeeks';
 import { useCalendar } from './hooks/useCalendar';
 import { clearLocalCalendar, forgetToken, revokeAccess } from './lib/gcal';
@@ -81,7 +81,10 @@ export default function App() {
    * the thing you had just made — three steps to finish one.
    */
   const [groupEdit, setGroupEdit] = useState<
-    | { mode: 'new'; assignTo: { dayId: DayId; taskId: string } | null }
+    | {
+        mode: 'new';
+        assignTo: { dayId: DayId; taskId: string } | { dayId: DayId; noteId: string } | null;
+      }
     | { mode: 'edit'; group: TaskGroup }
     | null
   >(null);
@@ -126,8 +129,10 @@ export default function App() {
     applyStandingTasks,
     applyStandingNotes,
     applyStandingGroups,
+    applyStandingNoteGroups,
     addNote,
     setNoteText,
+    setNoteGroup,
     removeNote,
     flush,
   } = useWeek(store, ready, prefs.defaultTasks, prefs.defaultNotes);
@@ -287,68 +292,8 @@ export default function App() {
     setSelected(todayId ?? 'mon');
   }, [weekLoaded, weekStart, todayId]);
 
-  /**
-   * Changing a standing task's group re-files the tasks already on the board.
-   *
-   * Standing tasks are seeded only when a week is *created*, so before this the
-   * mark you had just chosen reached next week and nothing you could see. The
-   * reconcile itself lives in `useWeek`; what lives here is *which* standing
-   * tasks changed, and what they changed from.
-   *
-   * Only the entries whose group actually moved in this edit are passed on.
-   * Handing over the whole list instead would make every edit re-file every
-   * matching task — so taking one task out of a group by hand held until you
-   * next touched an unrelated standing task, and then silently undid itself.
-   * Diffing means a change to "water" cannot disturb "strength training".
-   *
-   * Both directions travel. Clearing a standing task's group used to be
-   * dropped here on the grounds that a sweep must never overrule you, which
-   * meant choosing "no group" left every instance on the week still wearing
-   * the old mark and nothing to remove it with but seven visits to seven
-   * days. The previous group goes along with the new one instead, so the
-   * reconcile can leave alone anything you had moved elsewhere yourself.
-   *
-   * The first map seen is recorded without being applied. Prefs arrive
-   * asynchronously, so every load starts as `[]` and then becomes the real
-   * list — reading that as an edit would re-file on every single refresh.
-   */
-  const standingGroupMap = useMemo(() => {
-    const byLabel: Record<string, string | null> = {};
-    for (const task of prefs.defaultTasks) {
-      const key = task.label.trim().toLowerCase();
-      if (key) byLabel[key] = task.groupId;
-    }
-    return byLabel;
-  }, [prefs.defaultTasks]);
-
-  const appliedStanding = useRef<Record<string, string | null> | null>(null);
-
-  useEffect(() => {
-    if (!ready || !weekLoaded) {
-      /* Forget the baseline rather than keep it. The next list to arrive
-         belongs to a different session — signing in, signing out — and its
-         groups are a different account's ids entirely, so diffing the two
-         would file this week's tasks into groups that were never ours. A
-         fresh sighting is the honest reading of it. */
-      appliedStanding.current = null;
-      return;
-    }
-    const previous = appliedStanding.current;
-    appliedStanding.current = standingGroupMap;
-    if (previous === null) return;
-
-    const changed: StandingGroupChange[] = [];
-    for (const task of prefs.defaultTasks) {
-      const label = task.label.trim().toLowerCase();
-      if (!label) continue;
-      // A label that wasn't in the list before reads as "was in no group",
-      // which is what a newly typed standing task in fact was.
-      const from = previous[label] ?? null;
-      if (from === task.groupId) continue;
-      changed.push({ label, from, to: task.groupId });
-    }
-    if (changed.length > 0) applyStandingGroups(changed);
-  }, [ready, weekLoaded, standingGroupMap, applyStandingGroups, prefs.defaultTasks]);
+  useStandingRefile(prefs.defaultTasks, ready && weekLoaded, applyStandingGroups);
+  useStandingRefile(prefs.defaultNotes, ready && weekLoaded, applyStandingNoteGroups);
 
   /* The tab carries the app's identity, and the app's identity is whatever the
      theme is called — including a name typed by hand in the advanced picker.
@@ -533,6 +478,12 @@ export default function App() {
     onAddNote: () => addNote(selectedDay.id),
     onNoteChange: (noteId: string, text: string) => setNoteText(selectedDay.id, noteId, text),
     onDeleteNote: (noteId: string) => removeNote(selectedDay.id, noteId),
+    onNoteGroupChange: (noteId: string, groupId: string | null) =>
+      setNoteGroup(selectedDay.id, noteId, groupId),
+    onRequestNewNoteGroup: canAddGroup
+      ? (noteId: string) =>
+          setGroupEdit({ mode: 'new', assignTo: { dayId: selectedDay.id, noteId } })
+      : undefined,
     calendarImportedAt: calendar.connected ? calendar.importedAt : null,
     calendarImporting: calendar.status === 'importing',
     onRefreshCalendar: calendar.refresh,
@@ -559,9 +510,9 @@ export default function App() {
     if (!canAddGroup) return;
     const group = makeGroup(name, icon, carryAcross);
     saveGroups([...prefs.groups, group]);
-    if (groupEdit.assignTo) {
-      setTaskGroup(groupEdit.assignTo.dayId, groupEdit.assignTo.taskId, group.id);
-    }
+    const target = groupEdit.assignTo;
+    if (target && 'noteId' in target) setNoteGroup(target.dayId, target.noteId, group.id);
+    else if (target) setTaskGroup(target.dayId, target.taskId, group.id);
   };
 
   /* Nothing cascades into the weeks. A task pointing at a group that is gone
@@ -733,7 +684,7 @@ export default function App() {
         onApplyToWeek={(tasks) => applyStandingTasks(tasks, today)}
         defaultNotes={prefs.defaultNotes}
         onSaveDefaultNotes={saveDefaultNotes}
-        onApplyNotesToWeek={(notes) => applyStandingNotes(notes, today)}
+        onApplyNotesToWeek={(notes) => void applyStandingNotes(notes, today)}
         groups={prefs.groups}
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}

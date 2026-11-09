@@ -44,7 +44,7 @@ type Props = {
   onDeleteAccount: (password: string | null) => Promise<void>;
 };
 
-type StandingItem = { label: string; days: DayId[] };
+type StandingItem = { label: string; days: DayId[]; groupId: string | null };
 
 /** Trim, and drop the rows that are still blank. Days are left exactly as set. */
 function clean<T extends StandingItem>(items: T[]): T[] {
@@ -176,7 +176,10 @@ function useStandingDraft<T extends StandingItem>(
       ),
     );
 
-  return { draft, setDraft, setAt, removeAt, toggleDay };
+  const setGroupAt = (i: number, groupId: string | null) =>
+    setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
+
+  return { draft, setDraft, setAt, removeAt, toggleDay, setGroupAt };
 }
 
 function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -254,14 +257,11 @@ function StandingTasks({
   onApplyToWeek: (tasks: StandingTask[]) => void;
   groups: TaskGroup[];
 }) {
-  const { draft, setDraft, setAt, removeAt, toggleDay } = useStandingDraft(
+  const { draft, setDraft, setAt, removeAt, toggleDay, setGroupAt } = useStandingDraft(
     tasks,
     onSave,
     onApplyToWeek,
   );
-
-  const setGroupAt = (i: number, groupId: string | null) =>
-    setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
 
   return (
     <>
@@ -322,12 +322,14 @@ function StandingNotes({
   notes,
   onSave,
   onApplyToWeek,
+  groups,
 }: {
   notes: StandingNote[];
   onSave: (notes: StandingNote[]) => void;
   onApplyToWeek: (notes: StandingNote[]) => void;
+  groups: TaskGroup[];
 }) {
-  const { draft, setDraft, setAt, removeAt, toggleDay } = useStandingDraft(
+  const { draft, setDraft, setAt, removeAt, toggleDay, setGroupAt } = useStandingDraft(
     notes,
     onSave,
     onApplyToWeek,
@@ -346,6 +348,14 @@ function StandingNotes({
                 aria-label={`Standing note ${i + 1}`}
                 className="frost-field min-w-0 flex-1 text-sm"
               />
+              <GroupMenu
+                groups={groups}
+                value={note.groupId}
+                onSelect={(groupId) => setGroupAt(i, groupId)}
+                subject={note.label || `standing note ${i + 1}`}
+                className="-m-2 h-9 w-9 shrink-0"
+                size={15}
+              />
               <RemoveButton label={note.label || 'this note'} onClick={() => removeAt(i)} />
             </div>
 
@@ -362,7 +372,9 @@ function StandingNotes({
         {draft.length < MAX_STANDING && (
           <button
             type="button"
-            onClick={() => setDraft((d) => [...d, { label: '', days: [...DAY_IDS] }])}
+            onClick={() =>
+              setDraft((d) => [...d, { label: '', days: [...DAY_IDS], groupId: null }])
+            }
             className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
           >
             + add a standing note
@@ -424,9 +436,6 @@ function StandingLists({
           );
         })}
       </div>
-      <p className="mt-3 text-xs text-frost-text-faint">
-        Added to the rest of this week, and every new one.
-      </p>
 
       <div hidden={view !== 'tasks'}>
         <StandingTasks
@@ -437,7 +446,12 @@ function StandingLists({
         />
       </div>
       <div hidden={view !== 'notes'}>
-        <StandingNotes notes={notes} onSave={onSaveNotes} onApplyToWeek={onApplyNotes} />
+        <StandingNotes
+          notes={notes}
+          onSave={onSaveNotes}
+          onApplyToWeek={onApplyNotes}
+          groups={groups}
+        />
       </div>
     </div>
   );

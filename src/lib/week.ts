@@ -116,7 +116,7 @@ function makeTasks(starter: StandingTask[]): Task[] {
 }
 
 function makeNotes(starter: StandingNote[]): Note[] {
-  return starter.map((n) => ({ id: uid(), text: n.label }));
+  return starter.map((n) => ({ id: uid(), text: n.label.trim(), groupId: n.groupId }));
 }
 
 /**
@@ -156,6 +156,22 @@ export function createWeek(
       notes: makeNotes(standingFor(starterNotes, id)),
     })),
   };
+}
+
+/**
+ * `week` with each standing note added to the days it is set for, skipping any
+ * a day already has. Returns `week` itself when there is nothing to add.
+ */
+export function addStandingNotes(week: Week, standing: StandingNote[]): Week {
+  let changed = false;
+  const days = week.days.map((day) => {
+    const have = new Set(day.notes.map((n) => labelKey(n.text)));
+    const missing = standingFor(standing, day.id).filter((n) => !have.has(labelKey(n.label)));
+    if (!missing.length) return day;
+    changed = true;
+    return { ...day, notes: [...day.notes, ...makeNotes(missing)] };
+  });
+  return changed ? { ...week, days } : week;
 }
 
 /* ── Derived values (spec §3) ──────────────────────────────────────────────
@@ -269,6 +285,27 @@ export function upcomingGroupTasks(weeks: Week[], groupId: string): UpcomingTask
     }
   }
   return found.sort((a, b) => a.day.date.localeCompare(b.day.date));
+}
+
+/** One note, plus the day it sits on. */
+export type GroupedNote = { day: Day; note: Note };
+
+/** Every note in this week filed under `groupId`, Monday first. */
+export function groupNotes(week: Week, groupId: string): GroupedNote[] {
+  const found: GroupedNote[] = [];
+  for (const day of week.days) {
+    for (const note of day.notes) {
+      if (note.groupId === groupId && note.text.trim() !== '') found.push({ day, note });
+    }
+  }
+  return found;
+}
+
+/** `upcomingGroupTasks` for notes: later weeks only, oldest first. */
+export function upcomingGroupNotes(weeks: Week[], groupId: string): GroupedNote[] {
+  return weeks
+    .flatMap((week) => groupNotes(week, groupId))
+    .sort((a, b) => a.day.date.localeCompare(b.day.date));
 }
 
 export function groupTotals(week: Week, groupId: string): { done: number; total: number } {
@@ -393,6 +430,8 @@ export function normalizeWeek(raw: unknown, weekStart: string): Week {
           .map((n) => ({
             id: typeof n.id === 'string' ? n.id : uid(),
             text: typeof n.text === 'string' ? n.text : '',
+            // Notes saved before they could be grouped have no such field.
+            groupId: typeof n.groupId === 'string' && n.groupId ? n.groupId : null,
           }))
           .filter((n) => n.text.trim() !== '')
       : [];

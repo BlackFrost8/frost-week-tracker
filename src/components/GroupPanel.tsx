@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import type { DayId, Week } from '../types';
 import type { TaskGroup } from '../lib/prefs';
-import { DAY_SHORT, formatShortDate, groupTasks, upcomingGroupTasks } from '../lib/week';
+import {
+  DAY_SHORT,
+  formatShortDate,
+  groupNotes,
+  groupTasks,
+  upcomingGroupNotes,
+  upcomingGroupTasks,
+} from '../lib/week';
 import { TaskIcon } from './TaskIcon';
 
 type Props = {
@@ -15,6 +22,27 @@ type Props = {
   onNewGroup?: () => void;
   onEditGroup: (group: TaskGroup) => void;
 };
+
+function NoteDot() {
+  return (
+    <span className="grid h-3 w-3 shrink-0 place-items-center" aria-hidden="true">
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: 'var(--color-frost-cyan-500)' }}
+      />
+    </span>
+  );
+}
+
+function Rule() {
+  return (
+    <span
+      className="my-1.5 h-px"
+      style={{ backgroundColor: 'var(--frost-hairline)' }}
+      aria-hidden="true"
+    />
+  );
+}
 
 /**
  * Where a group's tasks can be seen together.
@@ -73,6 +101,7 @@ export function GroupPanel({
         <div className="flex flex-col gap-3">
           {groups.map((group) => {
             const tasks = groupTasks(week, group.id);
+            const notes = groupNotes(week, group.id);
             /* Counted separately from the fraction on the right, and that is
                the point: every percentage in this app is about the week you
                are looking at, and a bar that quietly folded in three weeks of
@@ -80,6 +109,10 @@ export function GroupPanel({
             const upcoming = group.carryAcross
               ? upcomingGroupTasks(upcomingWeeks, group.id).slice(0, 6)
               : [];
+            const upcomingNotes = group.carryAcross
+              ? upcomingGroupNotes(upcomingWeeks, group.id).slice(0, 6)
+              : [];
+            const hasUpcoming = upcoming.length > 0 || upcomingNotes.length > 0;
             const done = tasks.filter((t) => t.task.done).length;
             const total = tasks.length;
             const pct = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -169,7 +202,7 @@ export function GroupPanel({
 
                 {isOpen && (
                   <div className="mt-1 flex flex-col gap-0.5">
-                    {total === 0 && upcoming.length === 0 && (
+                    {total === 0 && notes.length === 0 && !hasUpcoming && (
                       <p className="py-1 text-sm text-frost-text-faint">
                         nothing in this group yet
                       </p>
@@ -238,7 +271,39 @@ export function GroupPanel({
                       </button>
                     ))}
 
-                    {upcoming.length > 0 && (
+                    {total > 0 && notes.length > 0 && <Rule />}
+
+                    {notes.map(({ day, note }) => (
+                      <button
+                        key={note.id}
+                        type="button"
+                        onClick={() => onSelectDay(day.id)}
+                        aria-label={`${note.text}, ${day.label}, note`}
+                        className="flex items-center gap-2.5 rounded py-1 pr-1 text-left hover:bg-[rgb(var(--frost-far-rgb)/0.04)]"
+                      >
+                        <NoteDot />
+                        <span
+                          className="min-w-0 flex-1 truncate text-sm"
+                          style={{ color: 'var(--color-frost-cyan-100)' }}
+                          title={note.text}
+                        >
+                          {note.text}
+                        </span>
+                        <span
+                          className="shrink-0 font-mono text-xs lowercase"
+                          style={{
+                            color:
+                              day.id === selected
+                                ? 'var(--color-frost-cyan-300)'
+                                : 'var(--color-frost-text-faint)',
+                          }}
+                        >
+                          {DAY_SHORT[day.id].slice(0, 3)}
+                        </span>
+                      </button>
+                    ))}
+
+                    {hasUpcoming && (
                       <>
                         {/* Ruled off rather than merely listed further down: a
                             date three weeks out among this week's weekdays
@@ -296,6 +361,27 @@ export function GroupPanel({
                             {/* A date, where this week's rows carry a weekday.
                                 The two never have to be told apart by reading
                                 the label. */}
+                            <span
+                              className="shrink-0 font-mono text-xs"
+                              style={{ color: 'var(--color-frost-text-faint)' }}
+                            >
+                              {formatShortDate(day.date)}
+                            </span>
+                          </div>
+                        ))}
+
+                        {upcoming.length > 0 && upcomingNotes.length > 0 && <Rule />}
+
+                        {upcomingNotes.map(({ day, note }) => (
+                          <div key={note.id} className="flex items-center gap-2.5 py-1 pr-1">
+                            <NoteDot />
+                            <span
+                              className="min-w-0 flex-1 truncate text-sm"
+                              style={{ color: 'var(--color-frost-cyan-100)' }}
+                              title={note.text}
+                            >
+                              {note.text}
+                            </span>
                             <span
                               className="shrink-0 font-mono text-xs"
                               style={{ color: 'var(--color-frost-text-faint)' }}

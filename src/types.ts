@@ -21,6 +21,8 @@ export type Task = {
 export type Note = {
   id: string;
   text: string;
+  /** Same contract as `Task.groupId`: null when unfiled, never undefined. */
+  groupId: string | null;
 };
 
 export type Day = {
