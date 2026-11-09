@@ -5,6 +5,7 @@ import {
   MAX_GROUPS,
   makeGroup,
   type LongTermGoal,
+  type StandingNote,
   type StandingTask,
   type TaskGroup,
 } from './lib/prefs';
@@ -123,12 +124,13 @@ export default function App() {
     setMeta,
     clearChecks,
     applyStandingTasks,
+    applyStandingNotes,
     applyStandingGroups,
     addNote,
     setNoteText,
     removeNote,
     flush,
-  } = useWeek(store, ready, prefs.defaultTasks);
+  } = useWeek(store, ready, prefs.defaultTasks, prefs.defaultNotes);
 
   const calendar = useCalendar(signedIn ? uid : null, authSettled);
 
@@ -158,6 +160,10 @@ export default function App() {
      saving lifted state back up here. */
   const saveDefaultTasks = useCallback(
     (defaultTasks: StandingTask[]) => void updatePrefs({ defaultTasks }),
+    [updatePrefs],
+  );
+  const saveDefaultNotes = useCallback(
+    (defaultNotes: StandingNote[]) => void updatePrefs({ defaultNotes }),
     [updatePrefs],
   );
   const saveAvatar = useCallback(
@@ -725,6 +731,9 @@ export default function App() {
         defaultTasks={prefs.defaultTasks}
         onSaveDefaultTasks={saveDefaultTasks}
         onApplyToWeek={(tasks) => applyStandingTasks(tasks, today)}
+        defaultNotes={prefs.defaultNotes}
+        onSaveDefaultNotes={saveDefaultNotes}
+        onApplyNotesToWeek={(notes) => applyStandingNotes(notes, today)}
         groups={prefs.groups}
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DayId, Note, SyncState, Task, Week } from '../types';
-import type { StandingTask } from '../lib/prefs';
+import type { StandingNote, StandingTask } from '../lib/prefs';
 import { flushPending, type WeekStore } from '../lib/storage';
-import { addDays, createWeek, currentWeekStart, standingTasksFor, uid } from '../lib/week';
+import { addDays, createWeek, currentWeekStart, standingFor, uid } from '../lib/week';
 import { useToday } from './useToday';
 
 const SAVE_DEBOUNCE_MS = 300;
@@ -73,7 +73,12 @@ function refileFromStanding(task: Task, changes: Map<string, StandingGroupChange
  * a pending save is flushed before switching weeks, so edits can never land on
  * the wrong week's row.
  */
-export function useWeek(store: WeekStore, ready: boolean, defaultTasks: StandingTask[] = []) {
+export function useWeek(
+  store: WeekStore,
+  ready: boolean,
+  defaultTasks: StandingTask[] = [],
+  defaultNotes: StandingNote[] = [],
+) {
   const [weekStart, setWeekStartRaw] = useState<string>(currentWeekStart);
   const [week, setWeek] = useState<Week | null>(null);
   const [previousWeek, setPreviousWeek] = useState<Week | null>(null);
@@ -128,6 +133,8 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
      list only ever matters at the moment a week is created. */
   const defaultsRef = useRef(defaultTasks);
   defaultsRef.current = defaultTasks;
+  const defaultNotesRef = useRef(defaultNotes);
+  defaultNotesRef.current = defaultNotes;
 
   /* ── Saving ───────────────────────────────────────────────────────────── */
 
@@ -202,7 +209,8 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
         if (!active || editSeq.current !== seq) return;
         // A week you've navigated to but never touched is created in memory and
         // only persisted once you actually edit it.
-        const resolved = existing ?? createWeek(weekStart, defaultsRef.current);
+        const resolved =
+          existing ?? createWeek(weekStart, defaultsRef.current, defaultNotesRef.current);
         weekRef.current = resolved;
         setWeek(resolved);
         setError(null);
@@ -516,7 +524,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
              intact. */
           const existing = day.tasks.map((task) => fileFromStanding(task, wanted));
           const have = new Set(existing.map((t) => t.label.trim().toLowerCase()));
-          const missing = standingTasksFor(standing, day.id)
+          const missing = standingFor(standing, day.id)
             .map((t) => ({ ...t, label: t.label.trim() }))
             .filter((t) => t.label && !have.has(t.label.toLowerCase()))
             .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
@@ -525,6 +533,26 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
           return { ...day, tasks: [...existing, ...missing] };
         });
         // Unchanged in, unchanged out, so `mutate` skips the write.
+        return changed ? { ...w, days } : w;
+      }),
+    [mutate],
+  );
+
+  /** `applyStandingTasks` for calendar notes: only adds, from `fromDate` on. */
+  const applyStandingNotes = useCallback(
+    (standing: StandingNote[], fromDate?: string) =>
+      mutate((w) => {
+        let changed = false;
+        const days = w.days.map((day) => {
+          if (fromDate && day.date < fromDate) return day;
+          const have = new Set(day.notes.map((n) => n.text.trim().toLowerCase()));
+          const missing = standingFor(standing, day.id)
+            .filter((n) => !have.has(n.label.trim().toLowerCase()))
+            .map((n) => ({ id: uid(), text: n.label.trim() }));
+          if (!missing.length) return day;
+          changed = true;
+          return { ...day, notes: [...day.notes, ...missing] };
+        });
         return changed ? { ...w, days } : w;
       }),
     [mutate],
@@ -621,6 +649,7 @@ export function useWeek(store: WeekStore, ready: boolean, defaultTasks: Standing
     setMeta,
     clearChecks,
     applyStandingTasks,
+    applyStandingNotes,
     applyStandingGroups,
     addNote,
     setNoteText,

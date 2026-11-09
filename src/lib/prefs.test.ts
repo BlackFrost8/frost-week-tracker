@@ -62,6 +62,20 @@ describe('prefs sync', () => {
     expect(reloaded.goals.map((g) => g.id)).toEqual(['a', 'mine', 'theirs']);
   });
 
+  it('keeps a standing note made offline through the next reload', async () => {
+    const note = { label: 'bring gym bag', days: ['mon' as const] };
+    cloud.docs.set(PATH, { goals: [goal('a')] });
+    const loaded = await loadPrefs();
+
+    cloud.offline = true;
+    await expect(savePrefs({ ...loaded, defaultNotes: [note] }, ['defaultNotes'])).rejects.toThrow();
+
+    cloud.offline = false;
+    expect((await loadPrefs()).defaultNotes).toEqual([note]);
+    await flushPrefs();
+    expect(stored().defaultNotes).toEqual([note]);
+  });
+
   it('adopts the cloud copy for fields with no unsent edit', async () => {
     cloud.docs.set(PATH, { goals: [goal('a')] });
     await loadPrefs();

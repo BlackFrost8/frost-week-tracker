@@ -30,6 +30,15 @@ export type StandingTask = {
   groupId: string | null;
 };
 
+/** A calendar note that repeats on the days listed. Empty days means parked. */
+export type StandingNote = {
+  label: string;
+  days: DayId[];
+};
+
+/** Applies to standing tasks and standing notes, each list on its own. */
+export const MAX_STANDING = 20;
+
 /**
  * A named bucket a task can belong to — School, Health, whatever the week is
  * actually made of.
@@ -87,6 +96,8 @@ export const MAX_GOAL_LABEL = 70;
 export type Prefs = {
   /** Seeded into each matching day of a newly created week, in this order. */
   defaultTasks: StandingTask[];
+  /** Seeded into each matching day's calendar notes, in this order. */
+  defaultNotes: StandingNote[];
   /** In creation order. Tasks reference these by `id`. */
   groups: TaskGroup[];
   /** In the order they were written. Nothing else references these. */
@@ -114,6 +125,7 @@ export type Prefs = {
 
 export const EMPTY_PREFS: Prefs = {
   defaultTasks: [],
+  defaultNotes: [],
   groups: [],
   goals: [],
   avatar: null,
@@ -219,6 +231,12 @@ function toStandingTask(raw: unknown): StandingTask | null {
   return { label, days, groupId };
 }
 
+/** Rebuilt field by field, so no `groupId` reaches a note. */
+function toStandingNote(raw: unknown): StandingNote | null {
+  const task = toStandingTask(raw);
+  return task && { label: task.label, days: task.days };
+}
+
 /** Same contract as `toStandingTask`: trusted shape out, or nothing. */
 function toGroup(raw: unknown): TaskGroup | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -262,7 +280,14 @@ function normalise(raw: unknown): Prefs {
     ? r.defaultTasks
         .map(toStandingTask)
         .filter((t): t is StandingTask => t !== null)
-        .slice(0, 20)
+        .slice(0, MAX_STANDING)
+    : [];
+
+  const defaultNotes = Array.isArray(r.defaultNotes)
+    ? r.defaultNotes
+        .map(toStandingNote)
+        .filter((n): n is StandingNote => n !== null)
+        .slice(0, MAX_STANDING)
     : [];
 
   /* Deduplicated by id. Two groups sharing one id would make `groupById`
@@ -301,7 +326,7 @@ function normalise(raw: unknown): Prefs {
 
   // Anything but an explicit `true` reads as not yet shown, which is the right
   // answer for every account written before this field existed.
-  return { defaultTasks, groups, goals, avatar, tourDone: r.tourDone === true };
+  return { defaultTasks, defaultNotes, groups, goals, avatar, tourDone: r.tourDone === true };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -324,7 +349,7 @@ function writeLocal(uid: string | null, prefs: Prefs): void {
 const prefsDoc = (uid: string) => doc(db!, 'users', uid, 'settings', 'prefs');
 
 /* ── Sync bookkeeping ──────────────────────────────────────────────────────
-   Prefs are five unrelated fields sharing one document, and they are synced
+   Prefs are six unrelated fields sharing one document, and they are synced
    field by field.
 
    They used to be written as one whole document from whatever this tab had
@@ -341,7 +366,14 @@ const prefsDoc = (uid: string) => doc(db!, 'users', uid, 'settings', 'prefs');
    older cloud copy on the next reload — the very thing weeks were fixed for. */
 
 export type PrefsField = keyof Prefs;
-const FIELDS: PrefsField[] = ['defaultTasks', 'groups', 'goals', 'avatar', 'tourDone'];
+const FIELDS: PrefsField[] = [
+  'defaultTasks',
+  'defaultNotes',
+  'groups',
+  'goals',
+  'avatar',
+  'tourDone',
+];
 
 type Stamps = Partial<Record<PrefsField, string>>;
 type PrefsMeta = { dirty: PrefsField[]; base: Stamps };
@@ -381,6 +413,7 @@ function writeMeta(uid: string, meta: PrefsMeta): void {
 function hasContent(prefs: Prefs): boolean {
   return (
     prefs.defaultTasks.length > 0 ||
+    prefs.defaultNotes.length > 0 ||
     prefs.groups.length > 0 ||
     prefs.goals.length > 0 ||
     prefs.avatar !== null ||
@@ -409,7 +442,13 @@ export function mergePrefs(primary: Prefs, secondary: Prefs): Prefs {
       primary.defaultTasks,
       secondary.defaultTasks,
       (t) => t.label.trim().toLowerCase(),
-      20,
+      MAX_STANDING,
+    ),
+    defaultNotes: mergeList(
+      primary.defaultNotes,
+      secondary.defaultNotes,
+      (n) => n.label.trim().toLowerCase(),
+      MAX_STANDING,
     ),
     groups: mergeList(primary.groups, secondary.groups, (g) => g.id, MAX_GROUPS),
     goals: mergeList(primary.goals, secondary.goals, (g) => g.id, MAX_GOALS),

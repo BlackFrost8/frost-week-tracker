@@ -11,7 +11,7 @@ import {
 import { useDialog } from '../hooks/useDialog';
 import { fileToAvatar } from '../lib/avatar';
 import { isCloudConfigured } from '../lib/firebase';
-import type { StandingTask, TaskGroup } from '../lib/prefs';
+import { MAX_STANDING, type StandingNote, type StandingTask, type TaskGroup } from '../lib/prefs';
 import { DAY_IDS, DAY_LABELS, DAY_SHORT } from '../lib/week';
 import { GoogleMark } from './GoogleMark';
 import { GroupMenu } from './GroupMenu';
@@ -25,6 +25,9 @@ type Props = {
   defaultTasks: StandingTask[];
   onSaveDefaultTasks: (tasks: StandingTask[]) => void;
   onApplyToWeek: (tasks: StandingTask[]) => void;
+  defaultNotes: StandingNote[];
+  onSaveDefaultNotes: (notes: StandingNote[]) => void;
+  onApplyNotesToWeek: (notes: StandingNote[]) => void;
   groups: TaskGroup[];
   avatar: string | null;
   onSaveAvatar: (avatar: string | null) => void;
@@ -41,13 +44,15 @@ type Props = {
   onDeleteAccount: (password: string | null) => Promise<void>;
 };
 
+type StandingItem = { label: string; days: DayId[] };
+
 /** Trim, and drop the rows that are still blank. Days are left exactly as set. */
-function clean(tasks: StandingTask[]): StandingTask[] {
-  return tasks.map((t) => ({ ...t, label: t.label.trim() })).filter((t) => t.label !== '');
+function clean<T extends StandingItem>(items: T[]): T[] {
+  return items.map((t) => ({ ...t, label: t.label.trim() })).filter((t) => t.label !== '');
 }
 
-/** What `next` puts on a day that `before` didn't: new tasks, and new days on old ones. */
-function additions(before: StandingTask[], next: StandingTask[]): StandingTask[] {
+/** What `next` puts on a day that `before` didn't: new items, and new days on old ones. */
+function additions<T extends StandingItem>(before: T[], next: T[]): T[] {
   const had = new Map<string, Set<DayId>>();
   for (const t of before) {
     const key = t.label.trim().toLowerCase();
@@ -63,27 +68,21 @@ function additions(before: StandingTask[], next: StandingTask[]): StandingTask[]
 }
 
 /**
- * The tasks seeded into a newly created week, and the days each one lands on.
+ * The editable copy of a standing list.
  *
  * Edits are debounced rather than saved per keystroke: the local write is
  * free, but each one is also a Firestore document write, and typing "Wake up
  * at 6:00" would be nineteen of them.
  */
-function StandingTasks({
-  tasks,
-  onSave,
-  onApplyToWeek,
-  groups,
-}: {
-  tasks: StandingTask[];
-  onSave: (tasks: StandingTask[]) => void;
-  onApplyToWeek: (tasks: StandingTask[]) => void;
-  groups: TaskGroup[];
-}) {
-  const [draft, setDraft] = useState<StandingTask[]>(tasks);
+function useStandingDraft<T extends StandingItem>(
+  saved: T[],
+  onSave: (items: T[]) => void,
+  onApplyToWeek: (items: T[]) => void,
+) {
+  const [draft, setDraft] = useState<T[]>(saved);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
-  const initial = useRef(tasks);
+  const initial = useRef(saved);
   const onApplyRef = useRef(onApplyToWeek);
   onApplyRef.current = onApplyToWeek;
 
@@ -94,7 +93,7 @@ function StandingTasks({
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
 
-  /* There is deliberately NO effect syncing `draft` back from `tasks`.
+  /* There is deliberately NO effect syncing `draft` back from `saved`.
      `onSave` strips blank rows before persisting, so a "sync from props" step
      would fire 600ms after you pressed "add a standing task" and delete the
      empty row you were about to type into — which is exactly what it did.
@@ -161,9 +160,6 @@ function StandingTasks({
 
   const removeAt = (i: number) => setDraft((d) => d.filter((_, idx) => idx !== i));
 
-  const setGroupAt = (i: number, groupId: string | null) =>
-    setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
-
   const toggleDay = (i: number, day: DayId) =>
     setDraft((d) =>
       d.map((t, idx) =>
@@ -180,13 +176,95 @@ function StandingTasks({
       ),
     );
 
-  return (
-    <div className="mt-7">
-      <h3 className="text-sm text-frost-text">Standing tasks</h3>
-      <p className="mt-1.5 text-xs text-frost-text-faint">
-        Added to the rest of this week, and every new one.
-      </p>
+  return { draft, setDraft, setAt, removeAt, toggleDay };
+}
 
+function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Remove ${label}`}
+      // Padded to a real target: the icon is 10px, which is a fine
+      // thing to look at and an impossible thing to tap.
+      className="-m-2 grid h-9 w-9 shrink-0 place-items-center rounded text-frost-text-faint transition-colors duration-150 hover:text-frost-alert"
+    >
+      <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden="true">
+        <path
+          d="M1.2 1.2 8.8 8.8M8.8 1.2 1.2 8.8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+function DayPicker({
+  days,
+  subject,
+  onToggle,
+}: {
+  days: DayId[];
+  subject: string;
+  onToggle: (day: DayId) => void;
+}) {
+  return (
+    // A seven-column grid rather than a flex row: the cells divide the dialog
+    // evenly at any width instead of wrapping a lone "su" onto a second line,
+    // and it echoes the week strip's own geometry.
+    <div className="grid grid-cols-7 gap-1" role="group" aria-label="Days">
+      {DAY_IDS.map((id) => {
+        const on = days.includes(id);
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onToggle(id)}
+            aria-pressed={on}
+            aria-label={`${DAY_LABELS[id]}, ${subject}`}
+            title={DAY_LABELS[id]}
+            className={`rounded py-2 text-center font-mono text-xs lowercase transition-colors duration-150 ${
+              on
+                ? 'bg-frost-cyan-900 text-frost-cyan-200'
+                : 'text-frost-text-faint hover:text-frost-text-dim'
+            }`}
+          >
+            {/* Two letters, lower case: the wordmark keeps the app's
+                one uppercase slot. */}
+            {DAY_SHORT[id].slice(0, 2)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The tasks seeded into a newly created week, and the days each one lands on. */
+function StandingTasks({
+  tasks,
+  onSave,
+  onApplyToWeek,
+  groups,
+}: {
+  tasks: StandingTask[];
+  onSave: (tasks: StandingTask[]) => void;
+  onApplyToWeek: (tasks: StandingTask[]) => void;
+  groups: TaskGroup[];
+}) {
+  const { draft, setDraft, setAt, removeAt, toggleDay } = useStandingDraft(
+    tasks,
+    onSave,
+    onApplyToWeek,
+  );
+
+  const setGroupAt = (i: number, groupId: string | null) =>
+    setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
+
+  return (
+    <>
       <div className="mt-4 flex flex-col gap-5">
         {draft.map((task, i) => (
           <div key={i} className="flex flex-col gap-2">
@@ -210,59 +288,20 @@ function StandingTasks({
                 className="-m-2 h-9 w-9 shrink-0"
                 size={15}
               />
-              <button
-                type="button"
-                onClick={() => removeAt(i)}
-                aria-label={`Remove ${task.label || 'this task'}`}
-                // Padded to a real target: the icon is 10px, which is a fine
-                // thing to look at and an impossible thing to tap.
-                className="-m-2 grid h-9 w-9 shrink-0 place-items-center rounded text-frost-text-faint transition-colors duration-150 hover:text-frost-alert"
-              >
-                <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden="true">
-                  <path
-                    d="M1.2 1.2 8.8 8.8M8.8 1.2 1.2 8.8"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
+              <RemoveButton label={task.label || 'this task'} onClick={() => removeAt(i)} />
             </div>
 
-            {/* A seven-column grid rather than a flex row: the cells divide the
-                dialog evenly at any width instead of wrapping a lone "su" onto
-                a second line, and it echoes the week strip's own geometry. */}
-            <div className="grid grid-cols-7 gap-1" role="group" aria-label="Days">
-              {DAY_IDS.map((id) => {
-                const on = task.days.includes(id);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => toggleDay(i, id)}
-                    aria-pressed={on}
-                    aria-label={`${DAY_LABELS[id]} — ${task.label || `standing task ${i + 1}`}`}
-                    title={DAY_LABELS[id]}
-                    className={`rounded py-2 text-center font-mono text-xs lowercase transition-colors duration-150 ${
-                      on
-                        ? 'bg-frost-cyan-900 text-frost-cyan-200'
-                        : 'text-frost-text-faint hover:text-frost-text-dim'
-                    }`}
-                  >
-                    {/* Two letters, lower case: the wordmark keeps the app's
-                        one uppercase slot. */}
-                    {DAY_SHORT[id].slice(0, 2)}
-                  </button>
-                );
-              })}
-            </div>
+            <DayPicker
+              days={task.days}
+              subject={task.label || `standing task ${i + 1}`}
+              onToggle={(day) => toggleDay(i, day)}
+            />
           </div>
         ))}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-        {draft.length < 20 && (
+        {draft.length < MAX_STANDING && (
           <button
             type="button"
             onClick={() =>
@@ -273,6 +312,132 @@ function StandingTasks({
             + add a standing task
           </button>
         )}
+      </div>
+    </>
+  );
+}
+
+/** The calendar notes seeded into a newly created week. */
+function StandingNotes({
+  notes,
+  onSave,
+  onApplyToWeek,
+}: {
+  notes: StandingNote[];
+  onSave: (notes: StandingNote[]) => void;
+  onApplyToWeek: (notes: StandingNote[]) => void;
+}) {
+  const { draft, setDraft, setAt, removeAt, toggleDay } = useStandingDraft(
+    notes,
+    onSave,
+    onApplyToWeek,
+  );
+
+  return (
+    <>
+      <div className="mt-4 flex flex-col gap-5">
+        {draft.map((note, i) => (
+          <div key={i} className="flex flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <input
+                value={note.label}
+                onChange={(e) => setAt(i, e.target.value)}
+                placeholder="Something to remember"
+                aria-label={`Standing note ${i + 1}`}
+                className="frost-field min-w-0 flex-1 text-sm"
+              />
+              <RemoveButton label={note.label || 'this note'} onClick={() => removeAt(i)} />
+            </div>
+
+            <DayPicker
+              days={note.days}
+              subject={note.label || `standing note ${i + 1}`}
+              onToggle={(day) => toggleDay(i, day)}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+        {draft.length < MAX_STANDING && (
+          <button
+            type="button"
+            onClick={() => setDraft((d) => [...d, { label: '', days: [...DAY_IDS] }])}
+            className="text-sm text-frost-text-dim transition-colors hover:text-frost-cyan-300"
+          >
+            + add a standing note
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+const STANDING_VIEWS = [
+  { id: 'tasks', label: 'Standing tasks' },
+  { id: 'notes', label: 'Standing notes' },
+] as const;
+
+/**
+ * Both editors stay mounted and the inactive one is hidden. Unmounting on
+ * switch would drop blank rows and apply a list to the week before the dialog
+ * closes.
+ */
+function StandingLists({
+  tasks,
+  onSaveTasks,
+  onApplyTasks,
+  notes,
+  onSaveNotes,
+  onApplyNotes,
+  groups,
+}: {
+  tasks: StandingTask[];
+  onSaveTasks: (tasks: StandingTask[]) => void;
+  onApplyTasks: (tasks: StandingTask[]) => void;
+  notes: StandingNote[];
+  onSaveNotes: (notes: StandingNote[]) => void;
+  onApplyNotes: (notes: StandingNote[]) => void;
+  groups: TaskGroup[];
+}) {
+  const [view, setView] = useState<(typeof STANDING_VIEWS)[number]['id']>('tasks');
+
+  return (
+    <div className="mt-7">
+      <div className="grid grid-cols-2 gap-1" role="group" aria-label="Standing list">
+        {STANDING_VIEWS.map(({ id, label }) => {
+          const on = view === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setView(id)}
+              aria-pressed={on}
+              className={`rounded py-2 text-center text-sm transition-colors duration-150 ${
+                on
+                  ? 'bg-frost-cyan-900 text-frost-cyan-200'
+                  : 'text-frost-text-faint hover:text-frost-text-dim'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-frost-text-faint">
+        Added to the rest of this week, and every new one.
+      </p>
+
+      <div hidden={view !== 'tasks'}>
+        <StandingTasks
+          tasks={tasks}
+          onSave={onSaveTasks}
+          onApplyToWeek={onApplyTasks}
+          groups={groups}
+        />
+      </div>
+      <div hidden={view !== 'notes'}>
+        <StandingNotes notes={notes} onSave={onSaveNotes} onApplyToWeek={onApplyNotes} />
       </div>
     </div>
   );
@@ -670,6 +835,9 @@ export function AccountDialog({
   defaultTasks,
   onSaveDefaultTasks,
   onApplyToWeek,
+  defaultNotes,
+  onSaveDefaultNotes,
+  onApplyNotesToWeek,
   groups,
   avatar,
   onSaveAvatar,
@@ -704,6 +872,18 @@ export function AccountDialog({
   const panelRef = useDialog(open, onClose);
 
   if (!open) return null;
+
+  const standing = (
+    <StandingLists
+      tasks={defaultTasks}
+      onSaveTasks={onSaveDefaultTasks}
+      onApplyTasks={onApplyToWeek}
+      notes={defaultNotes}
+      onSaveNotes={onSaveDefaultNotes}
+      onApplyNotes={onApplyNotesToWeek}
+      groups={groups}
+    />
+  );
 
   // Not awaited before the popup opens: signInWithPopup has to be reached
   // synchronously from the click or the browser blocks it as unsolicited.
@@ -784,12 +964,7 @@ export function AccountDialog({
             <p className="mt-2 text-sm text-frost-text-dim">Signing in isn’t set up here.</p>
 
             <span className="frost-divider mt-7 block" />
-            <StandingTasks
-              tasks={defaultTasks}
-              onSave={onSaveDefaultTasks}
-              onApplyToWeek={onApplyToWeek}
-              groups={groups}
-            />
+            {standing}
 
             <button
               type="button"
@@ -926,12 +1101,7 @@ export function AccountDialog({
             )}
 
             <span className="frost-divider mt-7 block" />
-            <StandingTasks
-              tasks={defaultTasks}
-              onSave={onSaveDefaultTasks}
-              onApplyToWeek={onApplyToWeek}
-              groups={groups}
-            />
+            {standing}
 
             <button
               type="button"
