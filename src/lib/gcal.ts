@@ -38,6 +38,8 @@ export type CalendarEvent = {
   date: string;
   /** Local 24h "HH:MM", or null for an all-day event. */
   time: string | null;
+  /** A timed event carried on from an earlier day — Friday night into Saturday. */
+  ongoing: boolean;
 };
 
 export type CalendarImport = {
@@ -131,7 +133,7 @@ export function revokeAccess(): void {
 /* ── Fetching ──────────────────────────────────────────────────────────── */
 
 type ApiTime = { date?: string; dateTime?: string };
-type ApiEvent = {
+export type ApiEvent = {
   id?: string;
   status?: string;
   summary?: string;
@@ -159,8 +161,19 @@ async function api<T>(token: string, path: string): Promise<T> {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+/** "3 min ago", "yesterday" — when the events were last brought in. */
+export function sinceText(iso: string): string {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return 'just now';
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  if (minutes < 60) return rtf.format(-minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  return rtf.format(-Math.round(hours / 24), 'day');
+}
+
 /** One entry per local date the event touches, within the cap. */
-function toEvents(raw: ApiEvent, calendarId: string): CalendarEvent[] {
+export function toEvents(raw: ApiEvent, calendarId: string): CalendarEvent[] {
   if (!raw.id || raw.status === 'cancelled') return [];
   if (raw.attendees?.some((a) => a.self && a.responseStatus === 'declined')) return [];
 
@@ -170,9 +183,24 @@ function toEvents(raw: ApiEvent, calendarId: string): CalendarEvent[] {
   if (raw.start?.dateTime) {
     const start = new Date(raw.start.dateTime);
     if (Number.isNaN(start.getTime())) return [];
-    return [
-      { id, title, date: toISODate(start), time: `${pad(start.getHours())}:${pad(start.getMinutes())}` },
+    const first = toISODate(start);
+    const out: CalendarEvent[] = [
+      { id, title, date: first, time: `${pad(start.getHours())}:${pad(start.getMinutes())}`, ongoing: false },
     ];
+    /* A timed event that runs past midnight used to show on its first day
+       only, so Saturday morning knew nothing of Friday night's trip. The end
+       is exclusive: one that stops at 00:00 does not touch the next day. */
+    const end = raw.end?.dateTime ? new Date(raw.end.dateTime) : start;
+    if (Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) return out;
+    const last = toISODate(new Date(end.getTime() - 1));
+    for (
+      let date = addDays(first, 1);
+      date <= last && out.length < MAX_SPAN_DAYS;
+      date = addDays(date, 1)
+    ) {
+      out.push({ id: `${id}:${date}`, title, date, time: null, ongoing: true });
+    }
+    return out;
   }
 
   const first = raw.start?.date;
@@ -181,7 +209,7 @@ function toEvents(raw: ApiEvent, calendarId: string): CalendarEvent[] {
   const last = raw.end?.date ? addDays(raw.end.date, -1) : first;
   const out: CalendarEvent[] = [];
   for (let date = first; date <= last && out.length < MAX_SPAN_DAYS; date = addDays(date, 1)) {
-    out.push({ id: `${id}:${date}`, title, date, time: null });
+    out.push({ id: `${id}:${date}`, title, date, time: null, ongoing: false });
   }
   return out;
 }
@@ -266,6 +294,8 @@ function toEvent(raw: unknown): CalendarEvent | null {
     title: typeof r.title === 'string' ? r.title.slice(0, MAX_TITLE) : '',
     date: r.date,
     time: typeof r.time === 'string' && /^\d{2}:\d{2}$/.test(r.time) ? r.time : null,
+    // Never undefined: this object goes back into a Firestore document.
+    ongoing: r.ongoing === true,
   };
 }
 

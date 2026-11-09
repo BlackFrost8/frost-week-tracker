@@ -17,11 +17,13 @@ import { useTheme } from './hooks/useTheme';
 import { useWeek, type StandingGroupChange } from './hooks/useWeek';
 import { useUpcomingWeeks } from './hooks/useUpcomingWeeks';
 import { useCalendar } from './hooks/useCalendar';
-import { clearLocalCalendar, forgetToken } from './lib/gcal';
+import { clearLocalCalendar, forgetToken, revokeAccess } from './lib/gcal';
+import { confirmOwner, deleteAccountAndData, downloadJson } from './lib/account';
 import {
   cloudStore,
   clearAccountCache,
   flushPending,
+  forgetAccountOnDevice,
   localStore,
   migrateLocalToCloud,
 } from './lib/storage';
@@ -258,10 +260,8 @@ export default function App() {
    *
    * Seeded to the current weekday rather than to Monday. The first week shown
    * is always the current one, so starting on Monday meant rendering the wrong
-   * card and correcting it in the effect below one frame later. That was
-   * visible as a flash, and the empty-day prompts made it costly: Monday
-   * claimed three prompts, today claimed three more, and the first three were
-   * marked as seen without anybody having seen them.
+   * card and correcting it in the effect below one frame later, which was
+   * visible as a flash.
    */
   const [selected, setSelected] = useState<DayId>(() => DAY_IDS[(new Date().getDay() + 6) % 7]);
 
@@ -407,6 +407,48 @@ export default function App() {
     }
   };
 
+  /**
+   * Every week this account or device holds, plus its settings, as one JSON
+   * file. Reads through the active store, so it works signed in or out.
+   */
+  const handleExport = async () => {
+    await flush();
+    const starts = await store.listWeekStarts();
+    const weeks = (await Promise.all(starts.map((w) => store.loadWeek(w).catch(() => null))))
+      .filter((w) => w !== null)
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    downloadJson(`frost-week-tracker-${today}.json`, {
+      app: 'frost-week-tracker',
+      exportedAt: new Date().toISOString(),
+      account: profile ? { email: profile.email, name: profile.name } : null,
+      prefs,
+      calendarEvents: calendar.events,
+      weeks,
+    });
+  };
+
+  /**
+   * Deletes the account and everything in it, then forgets it on this device.
+   *
+   * `confirmOwner` is first, with nothing awaited before it, because a Google
+   * account confirms through a popup and a popup that opens after an await is
+   * blocked. Pending writes are flushed next so none of them lands after the
+   * data is gone and quietly recreates a week in a deleted account.
+   */
+  const handleDeleteAccount = async (password: string | null) => {
+    const leaving = uid;
+    await confirmOwner(password);
+    await flush();
+    await flushPrefs().catch(() => {});
+    revokeAccess();
+    await deleteAccountAndData();
+    if (leaving) {
+      forgetAccountOnDevice(leaving);
+      clearLocalPrefs(leaving);
+      clearLocalCalendar(leaving);
+    }
+  };
+
   /* A week that could not be fetched is not a week with nothing in it. Saying
      so plainly matters more here than anywhere else in the app: the blank
      week this used to render was the exact picture of the thing the user is
@@ -491,6 +533,9 @@ export default function App() {
     onAddNote: () => addNote(selectedDay.id),
     onNoteChange: (noteId: string, text: string) => setNoteText(selectedDay.id, noteId, text),
     onDeleteNote: (noteId: string) => removeNote(selectedDay.id, noteId),
+    calendarImportedAt: calendar.connected ? calendar.importedAt : null,
+    calendarImporting: calendar.status === 'importing',
+    onRefreshCalendar: calendar.refresh,
   };
 
   const calendarDates = new Set(
@@ -582,7 +627,11 @@ export default function App() {
             />
           </div>
 
-          <main className="grid gap-12 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_300px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
+          {/* `minmax(0,1fr)` below md as well: an implicit single column sizes
+              to its content's min-content width, and a task row's label
+              truncates rather than wraps — so one long task pushed the card,
+              and the whole page, wider than a 360px phone. */}
+          <main className="grid grid-cols-[minmax(0,1fr)] gap-12 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_300px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
             {/* THE DAY CARD IS FIRST, and that is a phone decision.
                 Below `md` this grid is one column, so source order is what the
                 reader gets — and the reader is usually standing between two
@@ -690,6 +739,8 @@ export default function App() {
         onSaveAvatar={saveAvatar}
         onAccountChanged={refreshAccount}
         onHideScreen={hideScreen}
+        onExport={handleExport}
+        onDeleteAccount={handleDeleteAccount}
       />
 
       <ThemeDialog

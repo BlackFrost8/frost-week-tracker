@@ -5,6 +5,7 @@ import { useDialog } from '../hooks/useDialog';
 import type { useTheme } from '../hooks/useTheme';
 import type { Calendar } from '../hooks/useCalendar';
 import { GoogleMark } from './GoogleMark';
+import { sinceText } from '../lib/gcal';
 
 /** The hook lives in App, not here: the wordmark in the header renders the
     theme's name, so both need the same instance of that state. */
@@ -17,17 +18,6 @@ type Props = {
   /** Opens the account dialog, for connecting while signed out. */
   onSignIn: () => void;
 };
-
-/** "3 min ago", "yesterday" — when the events were last brought in. */
-function sinceText(iso: string): string {
-  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  if (minutes < 1) return 'just now';
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  if (minutes < 60) return rtf.format(-minutes, 'minute');
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return rtf.format(-hours, 'hour');
-  return rtf.format(-Math.round(hours / 24), 'day');
-}
 
 function CalendarSettings({
   calendar,

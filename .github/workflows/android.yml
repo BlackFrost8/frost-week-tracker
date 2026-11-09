@@ -1,0 +1,110 @@
+name: Android app
+
+# Builds the Play Store bundle (.aab) and an installable .apk for testing.
+#
+# Signed when the upload key is in the repository's secrets (see
+# PLAY_STORE.md); unsigned when there are no signing secrets at all, which
+# still proves the project builds. Half-configured secrets fail the run.
+# The app opens planner.froststudio.org, so a change to the web app reaches
+# Android with the normal web deploy — this only needs re-running when
+# something in android/ changes, or to make a new upload for Play.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'claude/**']
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Unpack the upload key, if configured
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          KS="$RUNNER_TEMP/upload-keystore.jks"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            # Copied from a Windows clipboard, the text can carry CR/LF or
+            # spaces, which base64 refuses. Strip them before decoding.
+            if ! printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 -d > "$KS"; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 isn't valid base64. Copy it again from the .jks file (see PLAY_STORE.md, step 3)."
+              exit 1
+            fi
+            # Open it now, so a wrong password fails here in seconds with a
+            # plain message instead of deep inside the Gradle build.
+            if ! keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" -alias "${KEY_ALIAS:-upload}" > /dev/null 2>&1; then
+              echo "::error::The keystore decoded, but it won't open with ANDROID_KEYSTORE_PASSWORD and alias '${KEY_ALIAS:-upload}'. Check both secrets."
+              exit 1
+            fi
+            echo "ANDROID_KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
+            echo "Signing with the upload key."
+          elif [ -n "$KEYSTORE_PASSWORD" ]; then
+            # Half configured. This used to build unsigned and report success,
+            # which looks exactly like a build Play would take.
+            echo "::error::The signing passwords are set, but ANDROID_KEYSTORE_BASE64 is missing or empty. Check its exact name under Settings → Secrets and variables → Actions → Repository secrets."
+            exit 1
+          else
+            echo "::notice::No signing secrets — building unsigned. Play needs a signed bundle."
+          fi
+
+      - name: Build bundle and APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          # Every upload to Play needs a higher versionCode than the last.
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew --no-daemon bundleRelease assembleRelease
+
+      - name: Verify the signature and report the upload key fingerprint
+        if: env.ANDROID_KEYSTORE_PATH != ''
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          if ! jarsigner -verify "$AAB" | grep -q "jar verified"; then
+            echo "::error::The bundle was built but is not signed."
+            exit 1
+          fi
+          FP=$(keytool -list -v -keystore "$ANDROID_KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "${KEY_ALIAS:-upload}" | awk '/SHA256:/ {print $2; exit}')
+          {
+            echo "### Signed and ready for Play Console"
+            echo ""
+            echo "Upload key SHA-256 (add to public/.well-known/assetlinks.json so a directly installed APK opens without an address bar):"
+            echo ""
+            echo "\`$FP\`"
+            echo ""
+            echo "versionCode: ${{ github.run_number }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the unpacked key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload-keystore.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frost-android-${{ github.run_number }}
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

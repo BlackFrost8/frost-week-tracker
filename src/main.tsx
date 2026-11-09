@@ -20,3 +20,13 @@ createRoot(rootEl).render(
     <App />
   </StrictMode>,
 );
+
+/* The offline shell (public/sw.js). Production only: in dev it would cache
+   modules Vite is busy hot-replacing. Relative, so it works under any base. */
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      /* Unsupported or blocked (private mode): the app works as before. */
+    });
+  });
+}

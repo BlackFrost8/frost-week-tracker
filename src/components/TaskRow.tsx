@@ -201,9 +201,13 @@ export function TaskRow({
       {/* Label and mark share one flexible box so the mark sits against the end
           of the text rather than being pushed to the far edge of the row —
           it is part of reading the task, not a column of its own. */}
+      {/* Wraps on a phone, truncates from `sm` up. On a 360px screen the row
+          tools are always visible (there is no hover), and what they left
+          for the label cut "Revise calculus chapter 4" down to "Revise
+          calcul…". A second line is cheaper than a task you can't read. */}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span
-          className={`truncate text-sm transition-colors duration-150 ${
+          className={`min-w-0 text-sm [overflow-wrap:anywhere] transition-colors duration-150 sm:truncate ${
             task.done ? 'text-frost-text-faint line-through' : 'text-frost-text'
           }`}
           title={task.label}
