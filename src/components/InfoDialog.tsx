@@ -45,11 +45,12 @@ const SECTIONS: { title: string; items: string[] }[] = [
     ],
   },
   {
-    title: 'Standing tasks',
+    title: 'Standing tasks and notes',
     items: [
       'Open your profile picture, or "sign in", and list the tasks you do regularly.',
       'They are added to every new week, and a new one joins the rest of this week when you close the dialog.',
       'Choose which days each one appears on, and give it a group to carry.',
+      'Switch to standing notes to repeat a calendar note on the days you choose.',
     ],
   },
   {

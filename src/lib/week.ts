@@ -1,5 +1,5 @@
 import type { Day, DayId, Note, Task, Week } from '../types';
-import type { StandingTask } from './prefs';
+import type { StandingNote, StandingTask } from './prefs';
 
 export const DAY_IDS: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
@@ -115,25 +115,34 @@ function makeTasks(starter: StandingTask[]): Task[] {
   return starter.map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
 }
 
+function makeNotes(starter: StandingNote[]): Note[] {
+  return starter.map((n) => ({ id: uid(), text: n.label }));
+}
+
 /**
- * The standing tasks that belong to one day, in the order they were listed.
+ * The standing tasks or notes that belong to one day, in the order they were
+ * listed.
  *
- * Returns the whole `StandingTask`, not just its label: a routine carries the
- * group it belongs to, and dropping that here would mean the tasks that make
- * up most of a week — the ones seeded automatically — were the only ones that
- * could never be grouped.
+ * Returns the whole item, not just its label: a routine carries the group it
+ * belongs to, and dropping that here would mean the tasks that make up most of
+ * a week — the ones seeded automatically — were the only ones that could never
+ * be grouped.
  */
-export function standingTasksFor(standing: StandingTask[], day: DayId): StandingTask[] {
+export function standingFor<T extends { days: DayId[] }>(standing: T[], day: DayId): T[] {
   return standing.filter((t) => t.days.includes(day));
 }
 
 /**
- * `starter` is the user's standing tasks, seeded into the days each one is set
- * for. Pass `[]` (or nothing) for a bare week — `normalizeWeek` does exactly
- * that, since a week arriving from storage must be reconstructed as it was
- * saved and never re-seeded.
+ * `starter` and `starterNotes` are the user's standing tasks and notes, seeded
+ * into the days each one is set for. Pass nothing for a bare week —
+ * `normalizeWeek` does exactly that, since a week arriving from storage must be
+ * reconstructed as it was saved and never re-seeded.
  */
-export function createWeek(weekStart: string, starter: StandingTask[] = []): Week {
+export function createWeek(
+  weekStart: string,
+  starter: StandingTask[] = [],
+  starterNotes: StandingNote[] = [],
+): Week {
   return {
     weekStart,
     focus: '',
@@ -143,8 +152,8 @@ export function createWeek(weekStart: string, starter: StandingTask[] = []): Wee
       id,
       label: DAY_LABELS[id],
       date: addDays(weekStart, i),
-      tasks: makeTasks(standingTasksFor(starter, id)),
-      notes: [],
+      tasks: makeTasks(standingFor(starter, id)),
+      notes: makeNotes(standingFor(starterNotes, id)),
     })),
   };
 }

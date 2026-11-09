@@ -30,6 +30,15 @@ export type StandingTask = {
   groupId: string | null;
 };
 
+/** A calendar note that repeats on the days listed. Empty days means parked. */
+export type StandingNote = {
+  label: string;
+  days: DayId[];
+};
+
+/** Applies to standing tasks and standing notes, each list on its own. */
+export const MAX_STANDING = 20;
+
 /**
  * A named bucket a task can belong to — School, Health, whatever the week is
  * actually made of.
@@ -87,6 +96,8 @@ export const MAX_GOAL_LABEL = 70;
 export type Prefs = {
   /** Seeded into each matching day of a newly created week, in this order. */
   defaultTasks: StandingTask[];
+  /** Seeded into each matching day's calendar notes, in this order. */
+  defaultNotes: StandingNote[];
   /** In creation order. Tasks reference these by `id`. */
   groups: TaskGroup[];
   /** In the order they were written. Nothing else references these. */
@@ -114,6 +125,7 @@ export type Prefs = {
 
 export const EMPTY_PREFS: Prefs = {
   defaultTasks: [],
+  defaultNotes: [],
   groups: [],
   goals: [],
   avatar: null,
@@ -219,6 +231,12 @@ function toStandingTask(raw: unknown): StandingTask | null {
   return { label, days, groupId };
 }
 
+/** Rebuilt field by field, so no `groupId` reaches a note. */
+function toStandingNote(raw: unknown): StandingNote | null {
+  const task = toStandingTask(raw);
+  return task && { label: task.label, days: task.days };
+}
+
 /** Same contract as `toStandingTask`: trusted shape out, or nothing. */
 function toGroup(raw: unknown): TaskGroup | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -262,7 +280,14 @@ function normalise(raw: unknown): Prefs {
     ? r.defaultTasks
         .map(toStandingTask)
         .filter((t): t is StandingTask => t !== null)
-        .slice(0, 20)
+        .slice(0, MAX_STANDING)
+    : [];
+
+  const defaultNotes = Array.isArray(r.defaultNotes)
+    ? r.defaultNotes
+        .map(toStandingNote)
+        .filter((n): n is StandingNote => n !== null)
+        .slice(0, MAX_STANDING)
     : [];
 
   /* Deduplicated by id. Two groups sharing one id would make `groupById`
@@ -301,7 +326,7 @@ function normalise(raw: unknown): Prefs {
 
   // Anything but an explicit `true` reads as not yet shown, which is the right
   // answer for every account written before this field existed.
-  return { defaultTasks, groups, goals, avatar, tourDone: r.tourDone === true };
+  return { defaultTasks, defaultNotes, groups, goals, avatar, tourDone: r.tourDone === true };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -344,6 +369,7 @@ export async function loadPrefs(): Promise<Prefs> {
       // minus the abandoned seed, which must not be carried into the account.
       if (
         local.defaultTasks.length > 0 ||
+        local.defaultNotes.length > 0 ||
         local.groups.length > 0 ||
         local.goals.length > 0 ||
         local.avatar ||
@@ -429,6 +455,7 @@ export function savePrefs(prefs: Prefs): Promise<void> {
     .then(() =>
       setDoc(prefsDoc(uid), {
         defaultTasks: clean.defaultTasks,
+        defaultNotes: clean.defaultNotes,
         groups: clean.groups,
         goals: clean.goals,
         avatar: clean.avatar,
