@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DayId } from '../types';
 import {
   sendPasswordReset,
@@ -11,10 +11,17 @@ import {
 import { useDialog } from '../hooks/useDialog';
 import { fileToAvatar } from '../lib/avatar';
 import { isCloudConfigured } from '../lib/firebase';
-import { MAX_STANDING, type StandingNote, type StandingTask, type TaskGroup } from '../lib/prefs';
+import {
+  MAX_STANDING,
+  type Interval,
+  type StandingNote,
+  type StandingTask,
+  type TaskGroup,
+} from '../lib/prefs';
 import { DAY_IDS, DAY_LABELS, DAY_SHORT } from '../lib/week';
 import { GoogleMark } from './GoogleMark';
 import { GroupMenu } from './GroupMenu';
+import { IntervalMenu } from './IntervalMenu';
 import { LockGlyph } from './PrivacyCurtain';
 
 type Props = {
@@ -29,6 +36,9 @@ type Props = {
   onSaveDefaultNotes: (notes: StandingNote[]) => void;
   onApplyNotesToWeek: (notes: StandingNote[]) => void;
   groups: TaskGroup[];
+  /** Offered beside each standing task while intervals are switched on. */
+  intervals: Interval[];
+  intervalsOn: boolean;
   avatar: string | null;
   onSaveAvatar: (avatar: string | null) => void;
   /** Re-read the signed-in user after a credential changes under us. */
@@ -44,9 +54,21 @@ type Props = {
   onDeleteAccount: (password: string | null) => Promise<void>;
 };
 
-type StandingItem = { label: string; days: DayId[]; groupId: string | null };
+/* One shape for both lists. Notes never set `intervalId` — the list they are
+   in has no interval control — and `normalise` drops it from them on save. */
+type StandingItem = {
+  label: string;
+  days: DayId[];
+  groupId: string | null;
+  intervalId: string | null;
+};
 
-const blankItem = (): StandingItem => ({ label: '', days: [...DAY_IDS], groupId: null });
+const blankItem = (): StandingItem => ({
+  label: '',
+  days: [...DAY_IDS],
+  groupId: null,
+  intervalId: null,
+});
 
 /**
  * Filtering the canonical order keeps the stored array stable rather than
@@ -187,6 +209,9 @@ function useStandingDraft(
   const setGroupAt = (i: number, groupId: string | null) =>
     setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, groupId } : t)));
 
+  const setIntervalAt = (i: number, intervalId: string | null) =>
+    setDraft((d) => d.map((t, idx) => (idx === i ? { ...t, intervalId } : t)));
+
   const addPending = () => {
     const label = pending.label.trim();
     if (label === '') return;
@@ -201,6 +226,7 @@ function useStandingDraft(
     removeAt,
     toggleDay,
     setGroupAt,
+    setIntervalAt,
     pending,
     setPending,
     addPending,
@@ -279,6 +305,7 @@ function StandingList({
   onSave,
   onApplyToWeek,
   groups,
+  intervals,
 }: {
   noun: 'task' | 'note';
   placeholder: string;
@@ -286,6 +313,8 @@ function StandingList({
   onSave: (items: StandingItem[]) => void;
   onApplyToWeek: (items: StandingItem[]) => void;
   groups: TaskGroup[];
+  /** Undefined where there is no interval to offer: notes, or the feature off. */
+  intervals?: Interval[];
 }) {
   const {
     draft,
@@ -293,6 +322,7 @@ function StandingList({
     removeAt,
     toggleDay,
     setGroupAt,
+    setIntervalAt,
     pending,
     setPending,
     addPending,
@@ -337,6 +367,15 @@ function StandingList({
                     className="-m-2 h-9 w-9 shrink-0"
                     size={15}
                   />
+                  {intervals && (
+                    <IntervalMenu
+                      intervals={intervals}
+                      value={item.intervalId}
+                      onSelect={(intervalId) => setIntervalAt(i, intervalId)}
+                      subject={subject}
+                      className="-m-2 h-9 min-w-9 shrink-0"
+                    />
+                  )}
                   <RemoveButton
                     label={item.label || `this ${noun}`}
                     onClick={() => removeAt(i)}
@@ -378,6 +417,15 @@ function StandingList({
               className="-m-2 h-9 w-9 shrink-0"
               size={15}
             />
+            {intervals && (
+              <IntervalMenu
+                intervals={intervals}
+                value={pending.intervalId}
+                onSelect={(intervalId) => setPending((p) => ({ ...p, intervalId }))}
+                subject={newName}
+                className="-m-2 h-9 min-w-9 shrink-0"
+              />
+            )}
             <button
               type="submit"
               disabled={!canAdd}
@@ -421,7 +469,9 @@ function StandingLists({
   onSaveNotes,
   onApplyNotes,
   groups,
+  intervals,
 }: {
+  intervals?: Interval[];
   tasks: StandingTask[];
   onSaveTasks: (tasks: StandingTask[]) => void;
   onApplyTasks: (tasks: StandingTask[]) => void;
@@ -431,6 +481,8 @@ function StandingLists({
   groups: TaskGroup[];
 }) {
   const [view, setView] = useState<(typeof STANDING_VIEWS)[number]['id']>('tasks');
+  // Given the shared shape, with no interval: a note never sits in one.
+  const noteItems = useMemo(() => notes.map((n) => ({ ...n, intervalId: null })), [notes]);
 
   return (
     <div className="mt-7">
@@ -463,13 +515,14 @@ function StandingLists({
           onSave={onSaveTasks}
           onApplyToWeek={onApplyTasks}
           groups={groups}
+          intervals={intervals}
         />
       </div>
       <div hidden={view !== 'notes'}>
         <StandingList
           noun="note"
           placeholder="Something to remember"
-          items={notes}
+          items={noteItems}
           onSave={onSaveNotes}
           onApplyToWeek={onApplyNotes}
           groups={groups}
@@ -875,6 +928,8 @@ export function AccountDialog({
   onSaveDefaultNotes,
   onApplyNotesToWeek,
   groups,
+  intervals,
+  intervalsOn,
   avatar,
   onSaveAvatar,
   onAccountChanged,
@@ -918,6 +973,7 @@ export function AccountDialog({
       onSaveNotes={onSaveDefaultNotes}
       onApplyNotes={onApplyNotesToWeek}
       groups={groups}
+      intervals={intervalsOn ? intervals : undefined}
     />
   );
 

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Day, DayId, Task } from '../types';
-import { groupById, type TaskGroup } from '../lib/prefs';
+import { groupById, type Interval, type TaskGroup } from '../lib/prefs';
 import { DayMenu } from './DayMenu';
 import { GroupMenu } from './GroupMenu';
+import { IntervalMenu } from './IntervalMenu';
 import { TaskIcon } from './TaskIcon';
 
 type Props = {
@@ -32,6 +33,16 @@ type Props = {
    * every single line. Planning seven days was around fifty interactions.
    */
   onContinue?: () => void;
+  /**
+   * The intervals the day is divided into, when it is. Undefined while the
+   * feature is off, and the row then carries no grip at all.
+   */
+  intervals?: Interval[];
+  /** The interval this row is showing under; null for the unsorted list. */
+  intervalId?: string | null;
+  onIntervalChange?: (intervalId: string | null) => void;
+  /** Picks the row up by its grip. See `DayCard` for where it is put down. */
+  onDragStart?: (point: { x: number; y: number }) => void;
 };
 
 export function TaskRow({
@@ -47,6 +58,10 @@ export function TaskRow({
   dense = false,
   autoFocus = false,
   onContinue,
+  intervals,
+  intervalId = null,
+  onIntervalChange,
+  onDragStart,
 }: Props) {
   const isBlank = task.label.trim() === '';
   const [editing, setEditing] = useState(false);
@@ -240,6 +255,21 @@ export function TaskRow({
           visible wherever hovering isn't possible, since a control revealed by
           hover alone is a control a touch user cannot find at all. */}
       <span className="frost-row-tools flex shrink-0 items-center gap-1 transition-opacity duration-150">
+        {/* First, because it is the one control that moves the row within the
+            card rather than changing the task: dragged, it carries the task
+            into an interval; clicked, it lists them. */}
+        {intervals && onIntervalChange && (
+          <IntervalMenu
+            intervals={intervals}
+            value={intervalId}
+            onSelect={onIntervalChange}
+            subject={task.label}
+            onDragStart={onDragStart}
+            showCurrent={false}
+            className="h-6 w-6"
+          />
+        )}
+
         {/* Always the plain tag, never the group's own glyph: the mark beside
             the label already says which group this is, and a control that
             mirrors it would make one row show the same icon twice. This one is

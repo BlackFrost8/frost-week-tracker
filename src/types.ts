@@ -15,6 +15,14 @@ export type Task = {
    * ungrouped — see `groupById` in `lib/prefs.ts`.
    */
   groupId: string | null;
+  /**
+   * The interval of the day this task sits in — morning, school, evening — or
+   * null for the unsorted list at the top. Points at an `Interval.id` in the
+   * account's prefs, by the same reasoning as `groupId`, and with the same
+   * null-never-undefined contract. A pointer at an interval that has since
+   * been deleted renders as unsorted.
+   */
+  intervalId: string | null;
 };
 
 /** Something to remember on a day. Not a task: it has no checkbox and no count. */
