@@ -41,8 +41,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
     title: 'Calendar',
     items: [
       'Under each day’s tasks, "+ add a note" keeps something to remember. Notes have no tick and don’t count.',
-      'Connect Google Calendar in settings to show your events on the days they fall on.',
-      'A dot in the week strip marks a day with notes or events.',
+      'A dot in the week strip marks a day with notes.',
     ],
   },
   {

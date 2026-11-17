@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Day, DayId, Task } from '../types';
 import { intervalById, type Interval, type TaskGroup } from '../lib/prefs';
-import type { CalendarEvent } from '../lib/gcal';
 import { completedCount, leftCount, longDayDate } from '../lib/week';
 import { DayCalendar } from './DayCalendar';
 import { TaskRow } from './TaskRow';
@@ -28,18 +27,12 @@ type Props = {
   /** Every day of the week, so a task can be sent to one of the other six. */
   days: Day[];
   onMoveTask: (taskId: string, toDayId: DayId) => void;
-  /** Google Calendar events on this date. */
-  events: CalendarEvent[];
   onAddNote: () => string;
   onNoteChange: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
   onNoteGroupChange: (noteId: string, groupId: string | null) => void;
   /** Undefined at the group cap — see MAX_GROUPS. */
   onRequestNewNoteGroup?: (noteId: string) => void;
-  /** When the connected calendar was last imported; null when not connected. */
-  calendarImportedAt: string | null;
-  calendarImporting: boolean;
-  onRefreshCalendar: () => void;
 };
 
 /**
@@ -67,15 +60,11 @@ export function DayCard({
   onRequestNewGroup,
   days,
   onMoveTask,
-  events,
   onAddNote,
   onNoteChange,
   onDeleteNote,
   onNoteGroupChange,
   onRequestNewNoteGroup,
-  calendarImportedAt,
-  calendarImporting,
-  onRefreshCalendar,
 }: Props) {
   const done = completedCount(day);
   const left = leftCount(day);
@@ -255,16 +244,12 @@ export function DayCard({
 
         <DayCalendar
           notes={day.notes}
-          events={events}
           onAddNote={onAddNote}
           onNoteChange={onNoteChange}
           onDeleteNote={onDeleteNote}
           groups={groups}
           onNoteGroupChange={onNoteGroupChange}
           onRequestNewGroup={onRequestNewNoteGroup}
-          importedAt={calendarImportedAt}
-          importing={calendarImporting}
-          onRefresh={onRefreshCalendar}
         />
       </div>
 

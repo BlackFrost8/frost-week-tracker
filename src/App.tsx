@@ -17,8 +17,6 @@ import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useStandingRefile, useWeek } from './hooks/useWeek';
 import { useUpcomingWeeks } from './hooks/useUpcomingWeeks';
-import { useCalendar } from './hooks/useCalendar';
-import { clearLocalCalendar, forgetToken, revokeAccess } from './lib/gcal';
 import { confirmOwner, deleteAccountAndData, downloadJson } from './lib/account';
 import {
   cloudStore,
@@ -142,7 +140,6 @@ export default function App() {
     flush,
   } = useWeek(store, ready, prefs.defaultTasks, prefs.defaultNotes);
 
-  const calendar = useCalendar(signedIn ? uid : null, authSettled);
 
   /* Weeks built while signed out are pulled into the account on first sign-in.
      It is deliberately silent: being signed in is the whole promise that your
@@ -364,12 +361,9 @@ export default function App() {
     );
 
     await signOut();
-    forgetToken();
 
     if (leaving) {
       clearAccountCache(leaving);
-      // Always safe: the import is in the account, and another one is a click away.
-      clearLocalCalendar(leaving);
       if (prefsSaved) clearLocalPrefs(leaving);
     }
   };
@@ -389,7 +383,6 @@ export default function App() {
       exportedAt: new Date().toISOString(),
       account: profile ? { email: profile.email, name: profile.name } : null,
       prefs,
-      calendarEvents: calendar.events,
       weeks,
     });
   };
@@ -407,12 +400,10 @@ export default function App() {
     await confirmOwner(password);
     await flush();
     await flushPrefs().catch(() => {});
-    revokeAccess();
     await deleteAccountAndData();
     if (leaving) {
       forgetAccountOnDevice(leaving);
       clearLocalPrefs(leaving);
-      clearLocalCalendar(leaving);
     }
   };
 
@@ -502,7 +493,6 @@ export default function App() {
        moving is the confirmation, and it is on screen either way. */
     onMoveTask: (taskId: string, toDayId: DayId) =>
       moveTask(selectedDay.id, taskId, toDayId),
-    events: calendar.byDate.get(selectedDay.date) ?? [],
     onAddNote: () => addNote(selectedDay.id),
     onNoteChange: (noteId: string, text: string) => setNoteText(selectedDay.id, noteId, text),
     onDeleteNote: (noteId: string) => removeNote(selectedDay.id, noteId),
@@ -512,14 +502,11 @@ export default function App() {
       ? (noteId: string) =>
           setGroupEdit({ mode: 'new', assignTo: { dayId: selectedDay.id, noteId } })
       : undefined,
-    calendarImportedAt: calendar.connected ? calendar.importedAt : null,
-    calendarImporting: calendar.status === 'importing',
-    onRefreshCalendar: calendar.refresh,
   };
 
   const calendarDates = new Set(
     week.days
-      .filter((d) => d.notes.some((n) => n.text.trim()) || calendar.byDate.has(d.date))
+      .filter((d) => d.notes.some((n) => n.text.trim()))
       .map((d) => d.date),
   );
 
