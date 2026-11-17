@@ -28,6 +28,8 @@ export type StandingTask = {
   days: DayId[];
   /** Carried onto every task this seeds, so a routine keeps its group. */
   groupId: string | null;
+  /** Carried onto every task this seeds, so a routine lands in its interval. */
+  intervalId: string | null;
 };
 
 /** A calendar note that repeats on the days listed. Empty days means parked. */
@@ -36,6 +38,22 @@ export type StandingNote = {
   days: DayId[];
   groupId: string | null;
 };
+
+/**
+ * A named stretch of the day — Morning, School, Tea-time — that the to-do list
+ * can be divided into.
+ *
+ * Account-level for the same reason a group is: it describes how you live a
+ * day, not one particular day. A task points at it by id, so renaming
+ * "Afternoon" to "After school" relabels every week at once.
+ */
+export type Interval = {
+  id: string;
+  name: string;
+};
+
+export const MAX_INTERVALS = 12;
+export const MAX_INTERVAL_NAME = 24;
 
 /** Applies to standing tasks and standing notes, each list on its own. */
 export const MAX_STANDING = 20;
@@ -122,6 +140,16 @@ export type Prefs = {
    * an account exists to ask.
    */
   tourDone: boolean;
+  /** In display order: the order they sit under the to-do list. */
+  intervals: Interval[];
+  /**
+   * Whether the to-do list is divided into intervals at all.
+   *
+   * Kept apart from the list itself, so turning the feature off and on again
+   * does not cost you the intervals you had written, nor the tasks filed in
+   * them — they simply read as one list while it is off.
+   */
+  intervalsOn: boolean;
 };
 
 export const EMPTY_PREFS: Prefs = {
@@ -131,6 +159,8 @@ export const EMPTY_PREFS: Prefs = {
   goals: [],
   avatar: null,
   tourDone: false,
+  intervals: [],
+  intervalsOn: false,
 };
 
 const everyDay = (): DayId[] => [...DAY_IDS];
@@ -138,6 +168,20 @@ const everyDay = (): DayId[] => [...DAY_IDS];
 /** A fresh group, ready to be named. Ids are opaque and never reused. */
 export function makeGroup(name: string, icon: IconId, carryAcross = false): TaskGroup {
   return { id: newId(), name: name.trim().slice(0, MAX_GROUP_NAME), icon, carryAcross };
+}
+
+/** A fresh interval. Blank names are rejected by the caller, not stored. */
+export function makeInterval(name: string): Interval {
+  return { id: newId(), name: name.trim().slice(0, MAX_INTERVAL_NAME) };
+}
+
+/**
+ * The interval a task points at, or null. As with groups, a task pointing at
+ * an interval that has since been deleted simply reads as unsorted.
+ */
+export function intervalById(intervals: Interval[], id: string | null): Interval | null {
+  if (!id) return null;
+  return intervals.find((i) => i.id === id) ?? null;
 }
 
 /** A fresh goal. Blank labels are rejected by the caller, not stored. */
@@ -211,7 +255,7 @@ const localKey = (uid: string | null) => (uid ? `frost-week-tracker:prefs:${uid}
 function toStandingTask(raw: unknown): StandingTask | null {
   if (typeof raw === 'string') {
     const label = raw.trim();
-    return label ? { label, days: everyDay(), groupId: null } : null;
+    return label ? { label, days: everyDay(), groupId: null, intervalId: null } : null;
   }
   if (typeof raw !== 'object' || raw === null) return null;
 
@@ -228,8 +272,25 @@ function toStandingTask(raw: unknown): StandingTask | null {
   // Never `undefined`: this object is written into a Firestore document as-is,
   // and `setDoc` refuses undefined field values outright.
   const groupId = typeof r.groupId === 'string' && r.groupId ? r.groupId : null;
+  const intervalId = typeof r.intervalId === 'string' && r.intervalId ? r.intervalId : null;
 
-  return { label, days, groupId };
+  return { label, days, groupId, intervalId };
+}
+
+/** A standing note is a standing task without an interval: notes sit apart from the list. */
+function toStandingNote(raw: unknown): StandingNote | null {
+  const item = toStandingTask(raw);
+  return item ? { label: item.label, days: item.days, groupId: item.groupId } : null;
+}
+
+/** Same contract as `toGroup`: trusted shape out, or nothing. */
+function toInterval(raw: unknown): Interval | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Partial<Interval>;
+  const name = typeof r.name === 'string' ? r.name.trim().slice(0, MAX_INTERVAL_NAME) : '';
+  if (!name) return null;
+  const id = typeof r.id === 'string' && r.id ? r.id : newId();
+  return { id, name };
 }
 
 /** Same contract as `toStandingTask`: trusted shape out, or nothing. */
@@ -280,7 +341,7 @@ function normalise(raw: unknown): Prefs {
 
   const defaultNotes = Array.isArray(r.defaultNotes)
     ? r.defaultNotes
-        .map(toStandingTask)
+        .map(toStandingNote)
         .filter((n): n is StandingNote => n !== null)
         .slice(0, MAX_STANDING)
     : [];
@@ -319,9 +380,32 @@ function normalise(raw: unknown): Prefs {
   const avatar =
     typeof r.avatar === 'string' && r.avatar.startsWith('data:image/') ? r.avatar : null;
 
+  // Deduplicated by id, for the same reason groups are.
+  const intervalIds = new Set<string>();
+  const intervals: Interval[] = [];
+  if (Array.isArray(r.intervals)) {
+    for (const entry of r.intervals) {
+      if (intervals.length >= MAX_INTERVALS) break;
+      const interval = toInterval(entry);
+      if (!interval || intervalIds.has(interval.id)) continue;
+      intervalIds.add(interval.id);
+      intervals.push(interval);
+    }
+  }
+
   // Anything but an explicit `true` reads as not yet shown, which is the right
-  // answer for every account written before this field existed.
-  return { defaultTasks, defaultNotes, groups, goals, avatar, tourDone: r.tourDone === true };
+  // answer for every account written before this field existed. The same goes
+  // for the interval switch: off until someone turns it on.
+  return {
+    defaultTasks,
+    defaultNotes,
+    groups,
+    goals,
+    avatar,
+    tourDone: r.tourDone === true,
+    intervals,
+    intervalsOn: r.intervalsOn === true,
+  };
 }
 
 function readLocal(uid: string | null): Prefs {
@@ -344,7 +428,7 @@ function writeLocal(uid: string | null, prefs: Prefs): void {
 const prefsDoc = (uid: string) => doc(db!, 'users', uid, 'settings', 'prefs');
 
 /* ── Sync bookkeeping ──────────────────────────────────────────────────────
-   Prefs are six unrelated fields sharing one document, and they are synced
+   Prefs are eight unrelated fields sharing one document, and they are synced
    field by field.
 
    They used to be written as one whole document from whatever this tab had
@@ -368,6 +452,8 @@ const FIELDS: PrefsField[] = [
   'goals',
   'avatar',
   'tourDone',
+  'intervals',
+  'intervalsOn',
 ];
 
 type Stamps = Partial<Record<PrefsField, string>>;
@@ -412,7 +498,9 @@ function hasContent(prefs: Prefs): boolean {
     prefs.groups.length > 0 ||
     prefs.goals.length > 0 ||
     prefs.avatar !== null ||
-    prefs.tourDone
+    prefs.tourDone ||
+    prefs.intervals.length > 0 ||
+    prefs.intervalsOn
   );
 }
 
@@ -449,6 +537,8 @@ export function mergePrefs(primary: Prefs, secondary: Prefs): Prefs {
     goals: mergeList(primary.goals, secondary.goals, (g) => g.id, MAX_GOALS),
     avatar: primary.avatar ?? secondary.avatar,
     tourDone: primary.tourDone || secondary.tourDone,
+    intervals: mergeList(primary.intervals, secondary.intervals, (i) => i.id, MAX_INTERVALS),
+    intervalsOn: primary.intervalsOn || secondary.intervalsOn,
   };
 }
 

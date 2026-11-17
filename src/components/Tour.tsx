@@ -53,7 +53,7 @@ const STEPS: Step[] = [
   {
     target: 'day',
     title: 'The day',
-    body: 'The day you chose, and everything on it. Enter saves a task and opens the next line, so a list can be written straight through. Hover a task for its controls: file it in a group, rename it, send it to another day, or remove it.',
+    body: 'The day you chose, and everything on it. Enter saves a task and opens the next line, so a list can be written straight through. Hover a task for its controls: file it in a group, rename it, send it to another day, or remove it. When intervals are switched on, the grip at the start of a task’s controls lets you drag it into any interval below the list.',
   },
   {
     target: 'intent',
@@ -75,7 +75,7 @@ const STEPS: Step[] = [
     target: null,
     preset: 'standing',
     title: 'Standing tasks',
-    body: 'In the profile section after an account was made; there you can make a list of tasks that gets repeated frequently, and you can choose the days they show up in the week.',
+    body: 'In the profile section after an account was made; there you can make a list of tasks that gets repeated frequently, and you can choose the days they show up in the week. When intervals are switched on, the clock beside each standing task chooses the interval it lands in.',
   },
   {
     target: 'chrome',
@@ -87,6 +87,12 @@ const STEPS: Step[] = [
     stage: 'theme',
     title: 'Themes',
     body: 'If you do not like the Frost theme, you can choose from the 4 other color presets or even choose your own color scheme paired with a name so this Domain of Order can truly feel like it belongs to you.',
+  },
+  {
+    target: 'interval-settings',
+    stage: 'theme',
+    title: 'Intervals',
+    body: 'Also in settings, intervals divide the to-do list into the parts of your day, such as morning, school, tea-time or evening. Switch them on, then make your list of intervals. Each one shows up under the to-do list as a line with its name above it, and any task can be dragged into it.',
   },
 ];
 
@@ -294,8 +300,8 @@ function typing(): boolean {
  */
 function StandingPreset() {
   const rows = [
-    { label: 'strength training', icon: 'dumbbell', days: ['mon', 'wed', 'fri'] },
-    { label: 'read 10 pages', icon: 'book', days: [...DAY_IDS] as string[] },
+    { label: 'strength training', icon: 'dumbbell', interval: 'afternoon', days: ['mon', 'wed', 'fri'] },
+    { label: 'read 10 pages', icon: 'book', interval: 'evening', days: [...DAY_IDS] as string[] },
   ];
 
   return (
@@ -323,6 +329,8 @@ function StandingPreset() {
               <span className="shrink-0 text-frost-cyan-300">
                 <TaskIcon icon={row.icon} size={14} strokeWidth={2} />
               </span>
+              {/* What a standing task looks like with intervals switched on. */}
+              <span className="shrink-0 text-xs text-frost-cyan-300">{row.interval}</span>
             </div>
 
             <div className="grid grid-cols-7 gap-1">

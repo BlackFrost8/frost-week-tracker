@@ -6,7 +6,7 @@ type Props = {
   selected: DayId;
   today: string;
   onSelect: (id: DayId) => void;
-  /** Dates with notes or calendar events, marked with a dot. */
+  /** Dates with notes, marked with a dot. */
   marked: Set<string>;
 };
 

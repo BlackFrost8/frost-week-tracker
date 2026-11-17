@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Task, Week } from '../types';
 import { addStandingNotes, createWeek, groupNotes, mergeWeeks, normalizeWeek } from './week';
 
-const task = (id: string, label: string, done = false): Task => ({ id, label, done, groupId: null });
+const task = (id: string, label: string, done = false): Task => ({
+  id,
+  label,
+  done,
+  groupId: null,
+  intervalId: null,
+});
 
 function weekWith(monday: Task[], extra: Partial<Week> = {}): Week {
   const week = createWeek('2026-11-02');

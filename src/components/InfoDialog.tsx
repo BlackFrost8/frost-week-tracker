@@ -28,11 +28,20 @@ const SECTIONS: { title: string; items: string[] }[] = [
     ],
   },
   {
+    title: 'Intervals',
+    items: [
+      'Turn on intervals in settings to divide the to-do list into parts of your day, like morning, school, tea-time and evening.',
+      'Make your list of intervals with the button that appears under the switch. Each one shows under the to-do list as a line with its name above it.',
+      'Drag a task by the grip on its row into any interval, or click the grip to pick one. Drag it back above the lines to unsort it.',
+      'The "+" beside an interval\u2019s name adds a task straight into it.',
+      'Removing an interval moves its tasks back to the top of the list. Turning intervals off shows one list again, and keeps where everything was for when you turn them back on.',
+    ],
+  },
+  {
     title: 'Calendar',
     items: [
       'Under each day’s tasks, "+ add a note" keeps something to remember. Notes have no tick and don’t count.',
-      'Connect Google Calendar in settings to show your events on the days they fall on.',
-      'A dot in the week strip marks a day with notes or events.',
+      'A dot in the week strip marks a day with notes.',
     ],
   },
   {
@@ -51,6 +60,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
       'Open your profile picture, or "sign in", and list the tasks you do regularly.',
       'They are added to every new week, and a new one joins the rest of this week when you close the dialog.',
       'Choose which days each one appears on, and give it a group to carry.',
+      'With intervals on, the clock beside a standing task chooses the interval it lands in.',
       'Switch to standing notes to repeat a calendar note on the days you choose. A new one joins this week and every later week when you close the dialog.',
     ],
   },
@@ -83,6 +93,7 @@ const SECTIONS: { title: string; items: string[] }[] = [
       'Open settings with the gear beside the clock, or the one in the bottom right on a phone.',
       'Pick one of the five themes, or set your own two colours.',
       'Rename the app, and the name replaces the wordmark in the corner.',
+      'Switch intervals on or off, and edit their list.',
     ],
   },
   {

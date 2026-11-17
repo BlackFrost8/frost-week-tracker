@@ -112,7 +112,13 @@ export function formatLongDate(iso: string): string {
  * task` button appends the one blank row that is being typed into.
  */
 function makeTasks(starter: StandingTask[]): Task[] {
-  return starter.map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
+  return starter.map((t) => ({
+    id: uid(),
+    label: t.label,
+    done: false,
+    groupId: t.groupId,
+    intervalId: t.intervalId,
+  }));
 }
 
 function makeNotes(starter: StandingNote[]): Note[] {
@@ -419,6 +425,8 @@ export function normalizeWeek(raw: unknown, weekStart: string): Week {
                values, so a task loaded from a document written before groups
                existed would otherwise fail the next save outright. */
             groupId: typeof t.groupId === 'string' && t.groupId ? t.groupId : null,
+            // Tasks saved before intervals existed have no such field.
+            intervalId: typeof t.intervalId === 'string' && t.intervalId ? t.intervalId : null,
           }))
           .filter((t) => t.label.trim() !== '')
       : [];

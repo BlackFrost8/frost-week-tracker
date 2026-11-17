@@ -19,6 +19,7 @@ const task = (id: string, label: string, done = false, groupId: string | null = 
   label,
   done,
   groupId,
+  intervalId: null,
 });
 
 function weekWith(monday: Task[]): Week {

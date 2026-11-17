@@ -4,6 +4,7 @@ import type { IconId } from './lib/icons';
 import {
   MAX_GROUPS,
   makeGroup,
+  type Interval,
   type LongTermGoal,
   type StandingNote,
   type StandingTask,
@@ -16,8 +17,6 @@ import { usePrefs } from './hooks/usePrefs';
 import { useTheme } from './hooks/useTheme';
 import { useStandingRefile, useWeek } from './hooks/useWeek';
 import { useUpcomingWeeks } from './hooks/useUpcomingWeeks';
-import { useCalendar } from './hooks/useCalendar';
-import { clearLocalCalendar, forgetToken, revokeAccess } from './lib/gcal';
 import { confirmOwner, deleteAccountAndData, downloadJson } from './lib/account';
 import {
   cloudStore,
@@ -42,6 +41,7 @@ import { GoalPanel } from './components/GoalPanel';
 import { GroupPanel } from './components/GroupPanel';
 import { AccountDialog } from './components/AccountDialog';
 import { GroupDialog } from './components/GroupDialog';
+import { IntervalDialog } from './components/IntervalDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { PrivacyCurtain } from './components/PrivacyCurtain';
 import { SettingsButton } from './components/SettingsButton';
@@ -63,6 +63,7 @@ export default function App() {
   const { mode, profile, refresh: refreshAccount } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [intervalsOpen, setIntervalsOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   /* One decision per visit. Without it, finishing the tour writes `tourDone`,
      which re-renders with a fresh answer to "should this be shown", and the
@@ -123,12 +124,14 @@ export default function App() {
     addTask,
     removeTask,
     moveTask,
+    placeTask,
     setTaskGroup,
     setMeta,
     clearChecks,
     applyStandingTasks,
     applyStandingNotes,
     applyStandingGroups,
+    applyStandingIntervals,
     applyStandingNoteGroups,
     addNote,
     setNoteText,
@@ -137,7 +140,6 @@ export default function App() {
     flush,
   } = useWeek(store, ready, prefs.defaultTasks, prefs.defaultNotes);
 
-  const calendar = useCalendar(signedIn ? uid : null, authSettled);
 
   /* Weeks built while signed out are pulled into the account on first sign-in.
      It is deliberately silent: being signed in is the whole promise that your
@@ -179,6 +181,14 @@ export default function App() {
     (groups: TaskGroup[]) => void updatePrefs({ groups }),
     [updatePrefs],
   );
+  const saveIntervals = useCallback(
+    (intervals: Interval[]) => void updatePrefs({ intervals }),
+    [updatePrefs],
+  );
+  const toggleIntervals = useCallback(
+    (intervalsOn: boolean) => void updatePrefs({ intervalsOn }),
+    [updatePrefs],
+  );
   const saveGoals = useCallback(
     (goals: LongTermGoal[]) => void updatePrefs({ goals }),
     [updatePrefs],
@@ -190,10 +200,13 @@ export default function App() {
      precisely what made the theme-name box unusable, and there is no reason
      to leave the trap armed for the next effect that needs one of these. */
   const closeAccount = useCallback(() => setAccountOpen(false), []);
-  const signInFromSettings = useCallback(() => {
+  /* Settings closes as the interval list opens: two dialogs stacked would each
+     try to hold focus and each restore it on close. */
+  const editIntervals = useCallback(() => {
     setThemeOpen(false);
-    setAccountOpen(true);
+    setIntervalsOpen(true);
   }, []);
+  const closeIntervals = useCallback(() => setIntervalsOpen(false), []);
   const openTheme = useCallback(() => setThemeOpen(true), []);
   const closeTheme = useCallback(() => setThemeOpen(false), []);
   const closeGroupEdit = useCallback(() => setGroupEdit(null), []);
@@ -293,6 +306,12 @@ export default function App() {
   }, [weekLoaded, weekStart, todayId]);
 
   useStandingRefile(prefs.defaultTasks, ready && weekLoaded, applyStandingGroups);
+  useStandingRefile(
+    prefs.defaultTasks,
+    ready && weekLoaded,
+    applyStandingIntervals,
+    'intervalId',
+  );
   useStandingRefile(prefs.defaultNotes, ready && weekLoaded, applyStandingNoteGroups);
 
   /* The tab carries the app's identity, and the app's identity is whatever the
@@ -342,12 +361,9 @@ export default function App() {
     );
 
     await signOut();
-    forgetToken();
 
     if (leaving) {
       clearAccountCache(leaving);
-      // Always safe: the import is in the account, and another one is a click away.
-      clearLocalCalendar(leaving);
       if (prefsSaved) clearLocalPrefs(leaving);
     }
   };
@@ -367,7 +383,6 @@ export default function App() {
       exportedAt: new Date().toISOString(),
       account: profile ? { email: profile.email, name: profile.name } : null,
       prefs,
-      calendarEvents: calendar.events,
       weeks,
     });
   };
@@ -385,12 +400,10 @@ export default function App() {
     await confirmOwner(password);
     await flush();
     await flushPrefs().catch(() => {});
-    revokeAccess();
     await deleteAccountAndData();
     if (leaving) {
       forgetAccountOnDevice(leaving);
       clearLocalPrefs(leaving);
-      clearLocalCalendar(leaving);
     }
   };
 
@@ -458,7 +471,13 @@ export default function App() {
     onLabelChange: (taskId: string, label: string) =>
       setTaskLabel(selectedDay.id, taskId, label),
     onDelete: (taskId: string) => removeTask(selectedDay.id, taskId),
-    onAdd: () => addTask(selectedDay.id),
+    onAdd: (intervalId: string | null = null) => addTask(selectedDay.id, '', null, intervalId),
+    intervals: prefs.intervals,
+    intervalsOn: prefs.intervalsOn,
+    onIntervalChange: (taskId: string, intervalId: string | null) =>
+      placeTask(selectedDay.id, taskId, intervalId, null),
+    onPlaceTask: (taskId: string, intervalId: string | null, beforeId: string | null) =>
+      placeTask(selectedDay.id, taskId, intervalId, beforeId),
     groups: prefs.groups,
     onGroupChange: (taskId: string, groupId: string | null) =>
       setTaskGroup(selectedDay.id, taskId, groupId),
@@ -474,7 +493,6 @@ export default function App() {
        moving is the confirmation, and it is on screen either way. */
     onMoveTask: (taskId: string, toDayId: DayId) =>
       moveTask(selectedDay.id, taskId, toDayId),
-    events: calendar.byDate.get(selectedDay.date) ?? [],
     onAddNote: () => addNote(selectedDay.id),
     onNoteChange: (noteId: string, text: string) => setNoteText(selectedDay.id, noteId, text),
     onDeleteNote: (noteId: string) => removeNote(selectedDay.id, noteId),
@@ -484,14 +502,11 @@ export default function App() {
       ? (noteId: string) =>
           setGroupEdit({ mode: 'new', assignTo: { dayId: selectedDay.id, noteId } })
       : undefined,
-    calendarImportedAt: calendar.connected ? calendar.importedAt : null,
-    calendarImporting: calendar.status === 'importing',
-    onRefreshCalendar: calendar.refresh,
   };
 
   const calendarDates = new Set(
     week.days
-      .filter((d) => d.notes.some((n) => n.text.trim()) || calendar.byDate.has(d.date))
+      .filter((d) => d.notes.some((n) => n.text.trim()))
       .map((d) => d.date),
   );
 
@@ -686,6 +701,8 @@ export default function App() {
         onSaveDefaultNotes={saveDefaultNotes}
         onApplyNotesToWeek={(notes) => void applyStandingNotes(notes, today)}
         groups={prefs.groups}
+        intervals={prefs.intervals}
+        intervalsOn={prefs.intervalsOn}
         avatar={prefs.avatar}
         onSaveAvatar={saveAvatar}
         onAccountChanged={refreshAccount}
@@ -698,9 +715,17 @@ export default function App() {
         open={themeOpen}
         onClose={closeTheme}
         theme={theme}
-        calendar={calendar}
-        signedIn={signedIn}
-        onSignIn={signInFromSettings}
+        intervalsOn={prefs.intervalsOn}
+        intervalCount={prefs.intervals.length}
+        onToggleIntervals={toggleIntervals}
+        onEditIntervals={editIntervals}
+      />
+
+      <IntervalDialog
+        open={intervalsOpen}
+        onClose={closeIntervals}
+        intervals={prefs.intervals}
+        onSave={saveIntervals}
       />
 
       {/* One instance for making and for editing. It reads its subject from

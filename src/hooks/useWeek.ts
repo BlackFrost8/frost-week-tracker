@@ -57,6 +57,9 @@ export type StandingGroupChange = {
   to: string | null;
 };
 
+/** Which pointer on a standing item a refile follows: its group, or its interval. */
+export type StandingField = 'groupId' | 'intervalId';
+
 /**
  * The task as the edited standing task now says it should be filed, or the
  * very same object back.
@@ -68,15 +71,17 @@ export type StandingGroupChange = {
  *
  * Identical-reference-on-no-change, for the same reason as above.
  */
-function refileFromStanding<T extends { groupId: string | null }>(
+function refileFromStanding<T extends Partial<Record<StandingField, string | null>>>(
   item: T,
   text: string,
   changes: Map<string, StandingGroupChange>,
+  field: StandingField = 'groupId',
 ): T {
   const change = changes.get(text.trim().toLowerCase());
-  if (!change || change.to === item.groupId) return item;
-  if (item.groupId !== null && item.groupId !== change.from) return item;
-  return { ...item, groupId: change.to };
+  const current = item[field] ?? null;
+  if (!change || change.to === current) return item;
+  if (current !== null && current !== change.from) return item;
+  return { ...item, [field]: change.to };
 }
 
 function changesByLabel(edits: StandingGroupChange[]): Map<string, StandingGroupChange> {
@@ -115,18 +120,20 @@ function changesByLabel(edits: StandingGroupChange[]): Map<string, StandingGroup
  * — reading that as an edit would re-file on every single refresh.
  */
 export function useStandingRefile(
-  items: { label: string; groupId: string | null }[],
+  items: ({ label: string } & Partial<Record<StandingField, string | null>>)[],
   active: boolean,
   apply: (changes: StandingGroupChange[]) => void,
+  /** The same diffing serves a standing task's interval as well as its group. */
+  field: StandingField = 'groupId',
 ) {
   const groupMap = useMemo(() => {
     const byLabel: Record<string, string | null> = {};
     for (const item of items) {
       const key = item.label.trim().toLowerCase();
-      if (key) byLabel[key] = item.groupId;
+      if (key) byLabel[key] = item[field] ?? null;
     }
     return byLabel;
-  }, [items]);
+  }, [items, field]);
 
   const applied = useRef<Record<string, string | null> | null>(null);
 
@@ -151,11 +158,12 @@ export function useStandingRefile(
       // A label that wasn't in the list before reads as "was in no group",
       // which is what a newly typed standing item in fact was.
       const from = previous[label] ?? null;
-      if (from === item.groupId) continue;
-      changed.push({ label, from, to: item.groupId });
+      const to = item[field] ?? null;
+      if (from === to) continue;
+      changed.push({ label, from, to });
     }
     if (changed.length > 0) apply(changed);
-  }, [active, groupMap, apply, items]);
+  }, [active, groupMap, apply, items, field]);
 }
 
 /**
@@ -491,9 +499,14 @@ export function useWeek(
 
   /** Returns the new row's id so the caller can focus it immediately. */
   const addTask = useCallback(
-    (dayId: DayId, label = '', groupId: string | null = null) => {
+    (
+      dayId: DayId,
+      label = '',
+      groupId: string | null = null,
+      intervalId: string | null = null,
+    ) => {
       const id = uid();
-      mapDay(dayId, (tasks) => [...tasks, { id, label, done: false, groupId }]);
+      mapDay(dayId, (tasks) => [...tasks, { id, label, done: false, groupId, intervalId }]);
       return id;
     },
     [mapDay],
@@ -546,6 +559,36 @@ export function useWeek(
   const setTaskGroup = useCallback(
     (dayId: DayId, taskId: string, groupId: string | null) =>
       mapDay(dayId, (tasks) => tasks.map((t) => (t.id === taskId ? { ...t, groupId } : t))),
+    [mapDay],
+  );
+
+  /**
+   * Files one task into an interval — or back to the unsorted list with
+   * `null` — and puts it at a particular place there.
+   *
+   * This is what a drag lands as. `beforeId` is the task it was dropped above;
+   * null drops it at the end of that interval. The day's array is one list and
+   * the card sorts it by interval as it renders, so "the end of the interval"
+   * is simply the end of the array: whatever order the interval's own tasks
+   * are in, this one comes after them.
+   *
+   * One mutation, so a drag is one save. Dropping a task back exactly where it
+   * was returns the week unchanged and writes nothing.
+   */
+  const placeTask = useCallback(
+    (dayId: DayId, taskId: string, intervalId: string | null, beforeId: string | null) =>
+      mapDay(dayId, (tasks) => {
+        const from = tasks.findIndex((t) => t.id === taskId);
+        if (from === -1 || beforeId === taskId) return tasks;
+        const task = tasks[from];
+        const rest = tasks.filter((t) => t.id !== taskId);
+        const at = beforeId ? rest.findIndex((t) => t.id === beforeId) : -1;
+        const placed = task.intervalId === intervalId ? task : { ...task, intervalId };
+        const next =
+          at === -1 ? [...rest, placed] : [...rest.slice(0, at), placed, ...rest.slice(at)];
+        const same = next.every((t, i) => t === tasks[i]);
+        return same ? tasks : next;
+      }),
     [mapDay],
   );
 
@@ -625,7 +668,13 @@ export function useWeek(
           const missing = standingFor(standing, day.id)
             .map((t) => ({ ...t, label: t.label.trim() }))
             .filter((t) => t.label && !have.has(t.label.toLowerCase()))
-            .map((t) => ({ id: uid(), label: t.label, done: false, groupId: t.groupId }));
+            .map((t) => ({
+              id: uid(),
+              label: t.label,
+              done: false,
+              groupId: t.groupId,
+              intervalId: t.intervalId,
+            }));
           if (!missing.length && existing.every((t, i) => t === day.tasks[i])) return day;
           changed = true;
           return { ...day, tasks: [...existing, ...missing] };
@@ -713,6 +762,31 @@ export function useWeek(
     [mutate],
   );
 
+  /**
+   * `applyStandingGroups` for intervals: a standing task moved to another
+   * interval takes the tasks it seeded with it, and leaves alone any you had
+   * dragged somewhere else yourself.
+   */
+  const applyStandingIntervals = useCallback(
+    (edits: StandingGroupChange[]) =>
+      mutate((w) => {
+        const changes = changesByLabel(edits);
+        if (changes.size === 0) return w;
+
+        let changed = false;
+        const days = w.days.map((day) => {
+          const tasks = day.tasks.map((task) =>
+            refileFromStanding(task, task.label, changes, 'intervalId'),
+          );
+          if (tasks.every((task, i) => task === day.tasks[i])) return day;
+          changed = true;
+          return { ...day, tasks };
+        });
+        return changed ? { ...w, days } : w;
+      }),
+    [mutate],
+  );
+
   /** `applyStandingGroups` for calendar notes, matched on their text. */
   const applyStandingNoteGroups = useCallback(
     (edits: StandingGroupChange[]) =>
@@ -775,12 +849,14 @@ export function useWeek(
     addTask,
     removeTask,
     moveTask,
+    placeTask,
     setTaskGroup,
     setMeta,
     clearChecks,
     applyStandingTasks,
     applyStandingNotes,
     applyStandingGroups,
+    applyStandingIntervals,
     applyStandingNoteGroups,
     addNote,
     setNoteText,
